@@ -14,28 +14,35 @@ from app.services.rain_sync import sync_curah_hujan_dan_banjir, last_sync_info
 scheduler = AsyncIOScheduler()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Menjalankan sinkronisasi curah hujan otomatis setiap 1 jam
-    scheduler.add_job(
-        sync_curah_hujan_dan_banjir,
-        "interval",
-        hours=1,
-        id="sync_curah_hujan_job",
-        replace_existing=True,
-    )
-    scheduler.start()
-    yield
-    scheduler.shutdown()
+#@asynccontextmanager
+#async def lifespan(app: FastAPI):
+#    # Menjalankan sinkronisasi curah hujan otomatis setiap 1 jam
+#    scheduler.add_job(
+#        sync_curah_hujan_dan_banjir,
+#        "interval",
+#        hours=1,
+#        id="sync_curah_hujan_job",
+#        replace_existing=True,
+#    )
+#    scheduler.start()
+#    yield
+#    scheduler.shutdown()
 
 
 app = FastAPI(
     title="WebGIS2MBC",
     description="WebGIS potensi banjir dan rute evakuasi Kota Makassar",
     version="1.3.0",
-    lifespan=lifespan,
+    #lifespan=lifespan,
 )
 
+@app.get("/api/cron/sync-weather")
+async def trigger_weather_sync():
+    try:
+        result = sync_curah_hujan_dan_banjir()
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # =========================================================
 # 1. KONFIGURASI CORS
@@ -48,7 +55,6 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         # Atau sementara beri tanda bintang / origin frontend nanti:
     ],
-    allow_origin_regex=r"https://.*\.vercel\.app",  # <-- Mengizinkan SEMUA domain preview/production dari Vercel!
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

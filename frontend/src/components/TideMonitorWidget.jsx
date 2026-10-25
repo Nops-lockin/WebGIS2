@@ -11,7 +11,7 @@ const KELURAHAN_PESISIR_ROB = [
   { nama: "Tanjung Merdeka", kec: "Tamalate", elevasi: "2.3 m dpl", risiko: "Sedang" },
 ];
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 export default function TideMonitorWidget({ onFilterCoastal }) {
   const [loading, setLoading] = useState(true);
