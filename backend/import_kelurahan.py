@@ -7,9 +7,8 @@ from sqlalchemy import text
 from app.database import engine
 
 
-FILE_INPUT = Path(
-    r"E:\webgis2mbc\data\batas_kelurahan\kelurahan.geojson"
-)
+BASE_DIR = Path(__file__).resolve().parent.parent
+FILE_INPUT = BASE_DIR / "data" / "batas_kelurahan" / "kelurahan.geojson"
 
 if not FILE_INPUT.exists():
     raise FileNotFoundError(
