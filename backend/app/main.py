@@ -1,6 +1,5 @@
 
 import os
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,7 +9,6 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 import httpx
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.database import engine
 from app.services.rain_sync import sync_curah_hujan_dan_banjir, last_sync_info
