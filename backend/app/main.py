@@ -50,6 +50,20 @@ app = FastAPI(
 )
 
 
+@app.get("/api/cron/sync-weather")
+async def trigger_weather_sync():
+    """Endpoint untuk cron job Vercel menyinkronkan prakiraan cuaca & potensi banjir."""
+    try:
+        try:
+            sync_prakiraan_bmkg()
+        except Exception as bmkg_err:
+            pass
+        result = sync_curah_hujan_dan_banjir()
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # =========================================================
 # 1. KONFIGURASI CORS
 # =========================================================
@@ -66,6 +80,7 @@ allowed_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
