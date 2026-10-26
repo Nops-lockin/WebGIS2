@@ -46,7 +46,7 @@ app = FastAPI(
     title="JeneBosi (JB)",
     description="JeneBosi (JB): WebGIS potensi banjir dan rute evakuasi Kota Makassar",
     version="1.3.0",
-    lifespan=lifespan,
+#    lifespan=lifespan,
 )
 
 
