@@ -14,50 +14,21 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.database import engine
 from app.services.rain_sync import sync_curah_hujan_dan_banjir, last_sync_info
-from sync_prakiraan_bmkg import sync_prakiraan_bmkg
-
-scheduler = AsyncIOScheduler()
-
-
-#@asynccontextmanager
-#async def lifespan(app: FastAPI):
-    # Memperbarui prakiraan BMKG tersimpan sebelum model kerawanan dijalankan.
-#    scheduler.add_job(
-#        sync_prakiraan_bmkg,
-#        "interval",
-#        hours=3,
-#        id="sync_bmkg_forecast_job",
-#        replace_existing=True,
-#    )
-    # Menjalankan model kerawanan otomatis setiap 1 jam.
-#    scheduler.add_job(
-#        sync_curah_hujan_dan_banjir,
-#        "interval",
-#        hours=1,
-#        id="sync_curah_hujan_job",
-#        replace_existing=True,
-#    )
-#    scheduler.start()
-#    yield
-#    scheduler.shutdown()
-
-
 app = FastAPI(
     title="JeneBosi (JB)",
     description="JeneBosi (JB): WebGIS potensi banjir dan rute evakuasi Kota Makassar",
     version="1.3.0",
-#    lifespan=lifespan,
 )
 
+
+# =========================================================
+# 0. SINKRONISASI CRON
+# =========================================================
 
 @app.get("/api/cron/sync-weather")
 async def trigger_weather_sync():
     """Endpoint untuk cron job Vercel menyinkronkan prakiraan cuaca & potensi banjir."""
     try:
-        try:
-            sync_prakiraan_bmkg()
-        except Exception as bmkg_err:
-            pass
         result = sync_curah_hujan_dan_banjir()
         return {"status": "success", "data": result}
     except Exception as e:
@@ -366,13 +337,9 @@ def status_sync_hujan():
     """
     Memeriksa status sinkronisasi otomatis dan jadwal berikutnya.
     """
-    job = scheduler.get_job("sync_curah_hujan_job")
-    next_run = job.next_run_time.isoformat() if job and job.next_run_time else None
-
     return {
-        "scheduler_aktif": scheduler.running,
-        "jadwal_berikutnya": next_run,
-        "interval": "1 jam",
+        "scheduler_mode": "Vercel Cron (/api/cron/sync-weather)",
+        "jadwal": "Harian (0 0 * * *) via Vercel Cron",
         "terakhir": last_sync_info,
     }
 
