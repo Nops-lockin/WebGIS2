@@ -12,7 +12,7 @@ export default function DataSourceInfo() {
           </div>
           <h2 className="section-title">Tentang Sumber Data & Metodologi Analisis</h2>
           <p className="section-subtitle">
-            WebGIS2MBC dibangun atas prinsip integritas data ilmiah dan kejujuran informasi publik.
+            JeneBosi (JB) dibangun atas prinsip integritas data ilmiah dan kejujuran informasi publik.
             Berikut rincian sumber data, klasifikasi risiko, serta batasan analitis sistem.
           </p>
         </div>
@@ -131,7 +131,7 @@ export default function DataSourceInfo() {
           <div>
             <strong className="limitations-title">Batasan Analisis & Penyangkalan Hukum (Disclaimer)</strong>
             <p className="limitations-desc">
-              WebGIS2MBC ditujukan sebagai media edukasi dan kesiapsiagaan awal masyarakat, bukan sistem peringatan dini
+              JeneBosi (JB) ditujukan sebagai media edukasi dan kesiapsiagaan awal masyarakat, bukan sistem peringatan dini
               otomatis berbasis sensor real-time lapangan (Automatic Water Level Recorder / AWLR). Kedalaman air yang
               ditampilkan pada simulator bersifat <strong>ilustratif edukatif</strong>. Dalam situasi darurat bencana,
               seluruh keputusan evakuasi resmi harus merujuk pada komando BPBD Kota Makassar, Basarnas, dan Pemerintah
@@ -143,7 +143,7 @@ export default function DataSourceInfo() {
         {/* Footer Hak Cipta & Tim */}
         <div className="platform-footer">
           <div>
-            <strong>WebGIS2MBC &bull; Kesiapsiagaan Banjir Makassar</strong>
+            <strong>JeneBosi (JB) &bull; Kesiapsiagaan Banjir Makassar</strong>
             <p style={{ marginTop: "4px", fontSize: "12px", color: "#64748B" }}>
               Dikembangkan oleh: Flarino Marco Cristvan Zakaria, Ryan Adiputra Darmawan, Naufal Asa Malika.
             </p>

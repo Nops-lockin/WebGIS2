@@ -10,7 +10,7 @@ export default function FloodDepthEstimate({ depthCm, weatherCondition, updatedA
     <section className="depth-estimate-card" aria-label="Estimasi kedalaman genangan">
       <div className="depth-estimate-header">
         <div>
-          <span className="depth-estimate-eyebrow">ESTIMASI GENANGAN SAAT INI</span>
+          <span className="depth-estimate-eyebrow">PERKIRAAN KONDISI GENANGAN</span>
           <h3>{depth} cm</h3>
           <span className="depth-estimate-meter">{(depth / 100).toFixed(2)} meter</span>
         </div>
@@ -32,8 +32,8 @@ export default function FloodDepthEstimate({ depthCm, weatherCondition, updatedA
         Dihitung di backend dari prakiraan BMKG dan parameter spasial. Ini adalah estimasi indikatif,
         bukan pembacaan sensor atau kepastian banjir.
       </p>
-      {weatherCondition && <span className="depth-estimate-update">Kondisi BMKG: {weatherCondition}</span>}
-      {updatedAt && <span className="depth-estimate-update">Analisis: {new Date(updatedAt).toLocaleString("id-ID")}</span>}
+      {weatherCondition && <span className="depth-estimate-update">Kondisi cuaca: {weatherCondition}</span>}
+      {updatedAt && <span className="depth-estimate-update">Terakhir diperbarui: {new Date(updatedAt).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}</span>}
     </section>
   );
 }

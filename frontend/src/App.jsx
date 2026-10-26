@@ -15,6 +15,7 @@ import CitizenSafetyGuide from "./components/CitizenSafetyGuide";
 import WaterHeightSimulatorModal from "./components/WaterHeightSimulatorModal";
 import { generateJalurEvakuasi } from "./utils/evacuationRouting";
 import { POSKO_EVAKUASI_MAKASSAR } from "./data/evakuasiDanKanal";
+import { KATEGORI_FASILITAS } from "./data/fasilitasKritis";
 import {
   IconShield,
   IconSearch,
@@ -24,7 +25,8 @@ import {
   IconInfo,
 } from "./Icons";
 
-const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+// Kosong berarti API berada pada domain yang sama (deployment satu layanan).
+const API = (import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? "http://127.0.0.1:8000" : "")).replace(/\/$/, "");
 
 // Normalisasi response prakiraan BMKG
 function normalisasiPrakiraan(dataApi) {
@@ -43,7 +45,7 @@ function normalisasiPrakiraan(dataApi) {
     .filter((item) => item && typeof item === "object")
     .map((item) => ({
       ...item,
-      waktu_lokal: item.waktu_lokal || item.datetime || item.waktu || null,
+      waktu_lokal: (item.waktu_lokal || item.datetime || item.waktu || null)?.replace?.("T", " ") || null,
       suhu_c: item.suhu_c ?? item.suhu ?? item.temperature ?? null,
       kelembapan_persen: item.kelembapan_persen ?? item.kelembapan ?? item.humidity ?? null,
       kondisi: item.kondisi || item.weather_desc || item.cuaca || "Berawan",
@@ -65,12 +67,14 @@ export default function App() {
   const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
+  const [isSearchFocusedMobile, setIsSearchFocusedMobile] = useState(false);
   const [filter, setFilter] = useState("semua"); // "semua" | "rendah" | "sedang" | "tinggi" | "sangat_tinggi"
   const [selectedKelurahan, setSelectedKelurahan] = useState(null);
 
   const [prakiraan, setPrakiraan] = useState([]);
   const [loadingPrakiraan, setLoadingPrakiraan] = useState(false);
   const [errorPrakiraan, setErrorPrakiraan] = useState("");
+  const [forecastRequestVersion, setForecastRequestVersion] = useState(0);
 
   // =========================================================================
   // FITUR: DUAL MODE REAL-TIME VS MODE SIMULASI PENGUJIAN
@@ -142,50 +146,84 @@ export default function App() {
     };
   }, []);
 
-  // 2. Fetch prakiraan BMKG saat kelurahan dipilih
+  // 2. Ambil prakiraan BMKG saat kelurahan dipilih.
+  // Jika layanan langsung BMKG mengembalikan daftar kosong, gunakan salinan
+  // prakiraan terakhir di database agar panel tidak tampak kosong bagi warga.
   useEffect(() => {
-    if (!selectedKelurahan?.kode_wilayah) {
-      fetch(`${API}/api/bmkg/prakiraan/73.71`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => {
-          if (d) setPrakiraan(normalisasiPrakiraan(d));
-        })
-        .catch(() => {});
+    const kodeWilayah = selectedKelurahan?.kode_wilayah;
+
+    if (!kodeWilayah) {
+      setPrakiraan([]);
+      setLoadingPrakiraan(false);
+      setErrorPrakiraan(selectedKelurahan ? "Kode wilayah kelurahan tidak tersedia." : "");
       return;
     }
 
     const controller = new AbortController();
     setLoadingPrakiraan(true);
     setErrorPrakiraan("");
+    setPrakiraan([]);
 
-    fetch(`${API}/api/bmkg/prakiraan/${selectedKelurahan.kode_wilayah}`, {
-      signal: controller.signal,
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          return fetch(`${API}/api/prakiraan/${selectedKelurahan.kode_wilayah}`);
+    async function loadPrakiraan() {
+      const sumberPrakiraan = [
+        `${API}/api/bmkg/prakiraan/${kodeWilayah}`,
+        `${API}/api/prakiraan/${kodeWilayah}`,
+      ];
+
+      try {
+        for (const url of sumberPrakiraan) {
+          const response = await fetch(url, { signal: controller.signal });
+          if (!response.ok) continue;
+
+          const data = await response.json();
+          const daftar = normalisasiPrakiraan(data);
+          if (daftar.length > 0) {
+            setPrakiraan(daftar);
+            return;
+          }
         }
-        return res;
-      })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data) {
-          setPrakiraan(normalisasiPrakiraan(data));
-        } else {
-          setPrakiraan([]);
-        }
-      })
-      .catch((err) => {
+
+        setErrorPrakiraan("Prakiraan BMKG untuk kelurahan ini belum tersedia. Coba perbarui beberapa saat lagi.");
+      } catch (err) {
         if (err.name !== "AbortError") {
-          setErrorPrakiraan("Gagal mengambil data prakiraan BMKG.");
+          setErrorPrakiraan("Gagal terhubung ke layanan prakiraan BMKG.");
         }
-      })
-      .finally(() => {
-        setLoadingPrakiraan(false);
-      });
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoadingPrakiraan(false);
+        }
+      }
+    }
+
+    loadPrakiraan();
 
     return () => controller.abort();
-  }, [selectedKelurahan?.kode_wilayah]);
+  }, [selectedKelurahan?.kode_wilayah, forecastRequestVersion]);
+
+  const handleRefreshPrakiraan = useCallback(() => {
+    setForecastRequestVersion((version) => version + 1);
+  }, []);
+
+  // Responsive auto-detection saat ukuran layar berubah
+  useEffect(() => {
+    let timer;
+    const handleResize = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const isMobileScreen = window.innerWidth < 768;
+        setViewMode((current) => {
+          if (isMobileScreen && current === "laptop" && window.innerWidth < 640) return "mobile";
+          if (!isMobileScreen && current === "mobile" && window.innerWidth >= 1024) return "laptop";
+          return current;
+        });
+      }, 200);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      clearTimeout(timer);
+    };
+  }, []);
 
   // Daftar kelurahan untuk pencarian
   const daftarKelurahan = useMemo(() => {
@@ -197,6 +235,14 @@ export default function App() {
       feature: f,
     }));
   }, [geojson]);
+
+  // Autocomplete pencarian cepat di mobile
+  const searchResultsMobile = useMemo(() => {
+    if (!search || search.trim().length < 2) return [];
+    return daftarKelurahan
+      .filter((k) => k.nama_kelurahan.toLowerCase().includes(search.toLowerCase()))
+      .slice(0, 6);
+  }, [daftarKelurahan, search]);
 
   // Statistik agregat (dihitung dinamis saat Mode Simulasi aktif)
   const summary = useMemo(() => {
@@ -213,7 +259,7 @@ export default function App() {
         const id = f.properties.id;
         const nama = (f.properties.nama_kelurahan || "").toLowerCase();
         const e = 5;
-        const isCoastal = e < 4.5;
+        const isCoastal = e < 4.5 || ["mariso", "tallo", "buloa", "gusung", "camba berua", "ujung tanah"].some((k) => nama.includes(k));
         const isBasin = ["antang", "manggala", "tamalanrea", "tamangapa", "karunrung"].some((k) =>
           nama.includes(k)
         );
@@ -257,20 +303,33 @@ export default function App() {
     (item) => {
       const feat = geojson?.features.find((f) => f.properties.id === item.id);
       const b = banjir.find((x) => x.kelurahan_id === item.id || x.nama_kelurahan === item.nama_kelurahan);
+      const lowerName = String(item.nama_kelurahan || "").toLowerCase();
+      const isCoastal = ["mariso", "tallo", "buloa", "gusung", "camba berua", "ujung tanah", "tanjung merdeka"].some((k) => lowerName.includes(k));
+      const rain = simulationState.rainMm ?? 0;
+      const tide = simulationState.tideM ?? 0.45;
+      const baseIndex = Number(b?.indeks_kerawanan) || 250;
+      const depth = Math.max(0, Math.min(150, Math.round(((rain / 180) * 75 + ((tide - 0.3) / 1.5) * 30 + Math.max(0, Math.min(20, (baseIndex - 180) / 12)) + (isCoastal ? 10 : 0)) / 5) * 5));
+      const simulatedLevel = rain >= 120 || (rain >= 70 && tide >= 1.35) || (isCoastal && tide >= 1.45)
+        ? "Bahaya Ekstrem (Simulasi)"
+        : rain >= 60 || (isCoastal && tide >= 1.15)
+          ? "Siaga Banjir (Simulasi)"
+          : rain >= 25 || tide >= 1.0
+            ? "Waspada (Simulasi)"
+            : "Aman (Simulasi)";
 
       setSelectedKelurahan({
         id: item.id,
         nama_kelurahan: item.nama_kelurahan,
         kode_wilayah: item.kode_wilayah || b?.kode_wilayah,
         kecamatan: b?.kecamatan || "",
-        tingkat: b?.tingkat || "Rendah",
-        estimasi_kedalaman_cm: b?.estimasi_kedalaman_cm ?? null,
-        kondisi_bmkg: b?.kondisi_bmkg ?? null,
-        waktu_analisis: b?.waktu_analisis ?? null,
+        tingkat: isSimulation ? simulatedLevel : (b?.tingkat || "Rendah"),
+        estimasi_kedalaman_cm: isSimulation ? depth : (b?.estimasi_kedalaman_cm ?? null),
+        kondisi_bmkg: isSimulation ? `Skenario: ${simulationState.nama || "Kustom"}` : (b?.kondisi_bmkg ?? null),
+        waktu_analisis: isSimulation ? new Date().toISOString() : (b?.waktu_analisis ?? null),
         feature: feat,
       });
     },
-    [geojson, banjir]
+    [geojson, banjir, isSimulation, simulationState]
   );
 
   // FITUR 2: HANDLER GENERATE JALUR EVAKUASI TERAMAN
@@ -378,23 +437,47 @@ export default function App() {
               <div className="mobile-brand-icon">
                 <IconShield size={16} color="#FFFFFF" />
               </div>
-              <strong className="mobile-brand-title">WebGIS2MBC</strong>
+              <strong className="mobile-brand-title">JeneBosi <span>(JB)</span></strong>
             </div>
 
-            {/* Quick Search Input */}
-            <div className="mobile-search-pill">
-              <IconSearch size={14} color="#64748B" />
-              <input
-                type="text"
-                placeholder="Cari kelurahan..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="mobile-search-input"
-              />
-              {search && (
-                <button type="button" onClick={() => setSearch("")} className="mobile-search-clear">
-                  <IconClose size={12} color="#64748B" />
-                </button>
+            {/* Quick Search Input dengan Autocomplete */}
+            <div className="mobile-search-wrapper-rel">
+              <div className="mobile-search-pill">
+                <IconSearch size={14} color="#64748B" />
+                <input
+                  type="text"
+                  placeholder="Cari kelurahan..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onFocus={() => setIsSearchFocusedMobile(true)}
+                  onBlur={() => setTimeout(() => setIsSearchFocusedMobile(false), 200)}
+                  className="mobile-search-input"
+                />
+                {search && (
+                  <button type="button" onClick={() => setSearch("")} className="mobile-search-clear">
+                    <IconClose size={12} color="#64748B" />
+                  </button>
+                )}
+              </div>
+
+              {/* Dropdown Hasil Pencarian Mobile */}
+              {isSearchFocusedMobile && searchResultsMobile.length > 0 && (
+                <div className="mobile-search-dropdown">
+                  {searchResultsMobile.map((k) => (
+                    <div
+                      key={`m-search-res-${k.id}`}
+                      className="mobile-search-item"
+                      onMouseDown={() => {
+                        handleSelectKelurahan(k);
+                        setSearch(k.nama_kelurahan);
+                        setIsSearchFocusedMobile(false);
+                      }}
+                    >
+                      <strong>{k.nama_kelurahan}</strong>
+                      <span>Pilih wilayah</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
@@ -459,6 +542,20 @@ export default function App() {
             </button>
             <button
               type="button"
+              className={`mobile-chip chip-scenario ${isSimulation ? "active-scenario" : ""}`}
+              onClick={() => setSimulationModalOpen(true)}
+            >
+              🧪 {isSimulation ? "Skenario Aktif" : "Simulasi"}
+            </button>
+            <button
+              type="button"
+              className={`mobile-chip chip-feature ${bufferToolOpen ? "active-scenario" : ""}`}
+              onClick={() => setBufferToolOpen((open) => !open)}
+            >
+              🎯 {bufferToolOpen ? "Tutup Sempadan" : "Zona Sungai"}
+            </button>
+            <button
+              type="button"
               className="mobile-chip chip-feature"
               onClick={() => setMobileModalActive("pasut")}
             >
@@ -470,6 +567,20 @@ export default function App() {
               onClick={() => setMobileModalActive("cuaca")}
             >
               🌤️ Cuaca BMKG
+            </button>
+            <button
+              type="button"
+              className={`mobile-chip chip-feature ${facilityCategory !== "none" ? "active-scenario" : ""}`}
+              onClick={() => setMobileModalActive("fasilitas")}
+            >
+              🏢 Fasilitas ({facilityCategory === "semua" ? "Semua" : facilityCategory === "none" ? "Nonaktif" : facilityCategory})
+            </button>
+            <button
+              type="button"
+              className="mobile-chip chip-feature"
+              onClick={() => setMobileModalActive("panduan_darurat")}
+            >
+              🛡️ Darurat 112
             </button>
             <button
               type="button"
@@ -531,24 +642,109 @@ export default function App() {
             prakiraan={prakiraan}
             loadingPrakiraan={loadingPrakiraan}
             errorPrakiraan={errorPrakiraan}
+            onRefreshPrakiraan={handleRefreshPrakiraan}
             onOpenSimulator={() => setMobileModalActive("simulasi_kedalaman")}
             onShowRoute={handleShowRoute}
             badge={badge}
-            depthVal={selectedKelurahan.kedalaman_air_cm ?? null}
-            isSimulation={isSimulation}
-            simulationState={simulationState}
           />
         ) : (
           !activeRoute &&
           !bufferToolOpen && (
             <div className="mobile-bottom-prompt">
-              <IconCompass size={16} color="#176B65" />
-              <span>Ketuk wilayah di peta untuk melihat risiko banjir</span>
+              <div className="mobile-prompt-row">
+                <IconCompass size={15} color="#176B65" />
+                <span>Pilih kelurahan di peta atau pilihan cepat:</span>
+              </div>
+              <div className="mobile-quick-pills">
+                {["Antang", "Manggala", "Tamalanrea", "Panakkukang", "Mariso"].map((nama) => (
+                  <button
+                    key={`m-quick-${nama}`}
+                    type="button"
+                    className="mobile-quick-pill-btn"
+                    onClick={() => {
+                      const found = daftarKelurahan.find(
+                        (k) => k.nama_kelurahan.toLowerCase() === nama.toLowerCase()
+                      );
+                      if (found) handleSelectKelurahan(found);
+                    }}
+                  >
+                    {nama}
+                  </button>
+                ))}
+              </div>
             </div>
           )
         )}
 
         {/* Modal Drawer Fitur Pendukung di HP */}
+        <MobileDrawerModal
+          isOpen={mobileModalActive === "panduan_darurat"}
+          onClose={() => setMobileModalActive(null)}
+          title="Panduan Tanggap Darurat Banjir & Call Center 112"
+        >
+          <CitizenSafetyGuide />
+        </MobileDrawerModal>
+
+        <MobileDrawerModal
+          isOpen={mobileModalActive === "fasilitas"}
+          onClose={() => setMobileModalActive(null)}
+          title="Filter Fasilitas Kritis Kota Makassar"
+        >
+          <div className="mobile-facility-list" style={{ padding: "8px 0" }}>
+            <p style={{ fontSize: "13px", color: "#64748B", marginBottom: "12px" }}>
+              Pilih kategori fasilitas yang ingin ditampilkan pada peta:
+            </p>
+            {KATEGORI_FASILITAS.map((kat) => (
+              <button
+                key={kat.id}
+                type="button"
+                onClick={() => {
+                  setFacilityCategory(kat.id);
+                  setMobileModalActive(null);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  width: "100%",
+                  padding: "12px 14px",
+                  marginBottom: "8px",
+                  border: facilityCategory === kat.id ? "2px solid #176B65" : "1px solid #E2E8F0",
+                  borderRadius: "10px",
+                  background: facilityCategory === kat.id ? "#F0FDF4" : "#FFFFFF",
+                  fontWeight: facilityCategory === kat.id ? "600" : "400",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <span>{kat.icon} {kat.label}</span>
+                {facilityCategory === kat.id && <span style={{ color: "#176B65" }}>✓ Aktif</span>}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setFacilityCategory("none");
+                setMobileModalActive(null);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                width: "100%",
+                padding: "12px 14px",
+                border: facilityCategory === "none" ? "2px solid #DC2626" : "1px solid #E2E8F0",
+                borderRadius: "10px",
+                background: facilityCategory === "none" ? "#FEF2F2" : "#FFFFFF",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <span>🚫 Sembunyikan Semua Fasilitas</span>
+              {facilityCategory === "none" && <span style={{ color: "#DC2626" }}>✓ Tersembunyi</span>}
+            </button>
+          </div>
+        </MobileDrawerModal>
         <MobileDrawerModal
           isOpen={mobileModalActive === "simulasi_kedalaman"}
           onClose={() => setMobileModalActive(null)}
@@ -635,7 +831,7 @@ export default function App() {
   // RENDER 2: MODE LAPTOP / DESKTOP (WIDE 2-COLUMN EXPERIENCE)
   // =========================================================================
   return (
-    <div className="webgis-app-root">
+    <div className="webgis-app-root map-first-app">
       {/* 1. HEADER DENGAN TOMBOL MODE SIMULASI & MODE HP */}
       <AppHeader
         search={search}
@@ -645,6 +841,7 @@ export default function App() {
         viewMode={viewMode}
         onToggleMode={() => setViewMode("mobile")}
         onOpenWaterSimulator={() => setWaterSimulatorOpen(true)}
+        onOpenSimulation={() => setSimulationModalOpen(true)}
       />
 
       {/* 2. SECTION INTRODUKSI */}
@@ -704,6 +901,7 @@ export default function App() {
                   prakiraan={prakiraan}
                   loadingPrakiraan={loadingPrakiraan}
                   errorPrakiraan={errorPrakiraan}
+                  onRefreshPrakiraan={handleRefreshPrakiraan}
                   onShowRoute={handleShowRoute}
                   isSimulation={isSimulation}
                   simulationState={simulationState}
@@ -789,6 +987,16 @@ export default function App() {
           const found = daftarKelurahan.find((k) => k.nama_kelurahan.toLowerCase().includes(nama.toLowerCase()));
           if (found) handleSelectKelurahan(found);
         }}
+      />
+
+      <SimulationController
+        isOpen={simulationModalOpen}
+        onClose={() => setSimulationModalOpen(false)}
+        isSimulation={isSimulation}
+        onToggleMode={setIsSimulation}
+        simulationState={simulationState}
+        onChangeSimulation={setSimulationState}
+        onResetRealtime={handleResetSimulation}
       />
 
     </div>

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { IconShield, IconSearch, IconClose, IconMobile, IconLaptop, IconSliders } from "../Icons";
+import { IconShield, IconSearch, IconClose, IconMobile, IconLaptop, IconFlask } from "../Icons";
 
 export default function AppHeader({
   search = "",
@@ -9,6 +9,7 @@ export default function AppHeader({
   viewMode = "laptop",
   onToggleMode,
   onOpenWaterSimulator,
+  onOpenSimulation,
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -38,7 +39,7 @@ export default function AppHeader({
           </div>
           <div className="brand-text-block">
             <div className="brand-title">
-              WebGIS<span>2MBC</span>
+              Jene<span>Bosi</span>
             </div>
             <div className="brand-tagline">Kesiapsiagaan Banjir Makassar</div>
           </div>
@@ -95,21 +96,15 @@ export default function AppHeader({
           <button type="button" onClick={() => handleNavClick("peta")} className="nav-link">
             Peta Banjir
           </button>
-          <button type="button" onClick={() => handleNavClick("cuaca")} className="nav-link">
-            Prakiraan Cuaca
-          </button>
           <button type="button" onClick={() => handleNavClick("panduan")} className="nav-link">
             Panduan Siaga
           </button>
-          <button type="button" onClick={() => handleNavClick("tentang")} className="nav-link">
-            Tentang Data
-          </button>
         </nav>
 
-        {onOpenWaterSimulator && (
-          <button type="button" className="header-water-simulator-btn" onClick={onOpenWaterSimulator}>
-            <IconSliders size={15} color="#176B65" />
-            <span>Simulator Air</span>
+        {onOpenSimulation && (
+          <button type="button" className="header-simulation-btn" onClick={onOpenSimulation} title="Buka simulasi skenario banjir">
+            <IconFlask size={15} color="#FFFFFF" />
+            <span>Simulasi</span>
           </button>
         )}
 
@@ -124,13 +119,13 @@ export default function AppHeader({
           >
             {viewMode === "laptop" ? (
               <>
-                <IconMobile size={15} color="#176B65" />
-                <span>Mode HP</span>
+                <IconLaptop size={15} color="#176B65" />
+                <span>Tampilan: Laptop</span>
               </>
             ) : (
               <>
-                <IconLaptop size={15} color="#176B65" />
-                <span>Mode Laptop</span>
+                <IconMobile size={15} color="#176B65" />
+                <span>Tampilan: HP</span>
               </>
             )}
           </button>
@@ -157,21 +152,26 @@ export default function AppHeader({
       {mobileMenuOpen && (
         <div className="header-mobile-drawer">
           <button type="button" onClick={() => handleNavClick("peta")} className="mobile-nav-link">
-            🗺️ Peta Banjir
+            Peta Banjir
           </button>
           {onOpenWaterSimulator && (
             <button type="button" onClick={() => { setMobileMenuOpen(false); onOpenWaterSimulator(); }} className="mobile-nav-link">
-              📏 Simulator Ketinggian Air
+              Simulator Ketinggian Air
+            </button>
+          )}
+          {onOpenSimulation && (
+            <button type="button" onClick={() => { setMobileMenuOpen(false); onOpenSimulation(); }} className="mobile-nav-link">
+              Simulasi Skenario Banjir
             </button>
           )}
           <button type="button" onClick={() => handleNavClick("cuaca")} className="mobile-nav-link">
-            🌤️ Prakiraan Cuaca BMKG
+            Prakiraan Cuaca BMKG
           </button>
           <button type="button" onClick={() => handleNavClick("panduan")} className="mobile-nav-link">
-            📋 Panduan Kesiapsiagaan
+            Panduan Kesiapsiagaan
           </button>
           <button type="button" onClick={() => handleNavClick("tentang")} className="mobile-nav-link">
-            ℹ️ Tentang Data & Metodologi
+            Tentang Data & Metodologi
           </button>
         </div>
       )}

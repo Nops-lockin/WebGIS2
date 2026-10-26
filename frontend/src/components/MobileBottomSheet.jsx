@@ -1,14 +1,11 @@
 import React from "react";
-import FloodDepthVisualization from "./FloodDepthVisualization";
-import { getTypicalFloodDepth } from "./FloodDepthSimulator";
-import { POSKO_EVAKUASI_MAKASSAR } from "../data/evakuasiDanKanal";
+import FloodDepthEstimate from "./FloodDepthEstimate";
+import CitizenActionHub from "./CitizenActionHub";
 import {
   IconClose,
   IconShield,
   IconSliders,
-  IconPhone,
   IconInfo,
-  IconWhatsApp,
 } from "../Icons";
 
 export default function MobileBottomSheet({
@@ -17,54 +14,16 @@ export default function MobileBottomSheet({
   prakiraan = [],
   loadingPrakiraan = false,
   errorPrakiraan = "",
+  onRefreshPrakiraan,
   onOpenSimulator,
   onShowRoute,
   badge,
-  elevasiVal,
-  hujanVal,
-  depthVal,
-  isSimulation = false,
-  simulationState = null,
 }) {
   const [activeTab, setActiveTab] = React.useState("ikhtisar"); // "ikhtisar" | "kedalaman" | "cuaca"
 
   if (!selected) return null;
 
-  const autoDepth = getTypicalFloodDepth(selected, isSimulation, simulationState);
-  const effectiveDepth = depthVal !== null && depthVal > 0 ? depthVal : autoDepth;
-
-  // FITUR 1: Bagikan Peringatan Kelurahan ke WhatsApp
-  const handleShareWhatsApp = () => {
-    const nearest =
-      POSKO_EVAKUASI_MAKASSAR.find(
-        (p) =>
-          selected.kecamatan &&
-          p.kecamatan.toLowerCase().includes(selected.kecamatan.toLowerCase())
-      ) || POSKO_EVAKUASI_MAKASSAR[0];
-
-    const lines = [
-      `🚨 *PERINGATAN INFORMASI BANJIR KOTA MAKASSAR*`,
-      `📍 *Wilayah:* Kel. ${selected.nama_kelurahan}, Kec. ${selected.kecamatan || "Makassar"}`,
-      `⚠️ *Status Kerentanan:* ${badge?.label?.toUpperCase() || "WASPADA"}`,
-      `⛰️ *Ketinggian Elevasi:* ${elevasiVal !== null ? `${elevasiVal} m dpl` : "Belum terdata"}`,
-      `🌧️ *Curah Hujan Terkini:* ${hujanVal !== null ? `${hujanVal} mm` : "0 mm"}`,
-      ``,
-      `⛺ *Posko Evakuasi Terdekat:*`,
-      `• *Nama:* ${nearest.nama}`,
-      `• *Alamat:* ${nearest.alamat}`,
-      `• *Kapasitas:* ±${nearest.kapasitas} Jiwa`,
-      `• *Rute Maps Langsung:* https://www.google.com/maps/dir/?api=1&destination=${nearest.latitude},${nearest.longitude}`,
-      ``,
-      `📞 *Call Center Bencana Makassar:* 112 (Bebas Pulsa)`,
-      `🌐 *Lihat Peta Spasial WebGIS:* ${typeof window !== "undefined" ? window.location.origin : "https://webgis-banjir-makassar.id"}`,
-      ``,
-      `_Pemberitahuan resmi dari Sistem Mitigasi Bencana WebGIS Kota Makassar_`,
-    ];
-
-    const text = lines.join("\n");
-    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-    window.open(url, "_blank");
-  };
+  const effectiveDepth = Number(selected.estimasi_kedalaman_cm) || 0;
 
   return (
     <div className="mobile-bottom-sheet" role="dialog" aria-label={`Detail Kelurahan ${selected.nama_kelurahan}`}>
@@ -87,9 +46,7 @@ export default function MobileBottomSheet({
               {badge.label}
             </span>
           </div>
-          <span className="sheet-sub">
-            {selected.kecamatan ? `Kec. ${selected.kecamatan}` : "Kota Makassar"} &bull; Kode: {selected.kode_wilayah || "-"}
-          </span>
+          <span className="sheet-sub">{selected.kecamatan ? `Kecamatan ${selected.kecamatan}` : "Kota Makassar"}</span>
         </div>
 
         <button
@@ -102,23 +59,8 @@ export default function MobileBottomSheet({
         </button>
       </div>
 
-      {/* FITUR 1: Quick Action Button: Bagikan WA, Hubungi 112 & Simulasi */}
+      {/* Simulator adalah alat terpisah; bantuan warga digabungkan di Ikhtisar. */}
       <div className="sheet-quick-actions">
-        <button
-          type="button"
-          className="sheet-whatsapp-btn"
-          onClick={handleShareWhatsApp}
-          title="Bagikan peringatan ini ke WhatsApp"
-        >
-          <IconWhatsApp size={15} color="#FFFFFF" />
-          <span>Bagikan ke WA</span>
-        </button>
-
-        <a href="tel:112" className="sheet-call-btn">
-          <IconPhone size={15} color="#FFFFFF" />
-          <span>Call 112</span>
-        </a>
-
         <button
           type="button"
           className="sheet-sim-btn"
@@ -162,19 +104,6 @@ export default function MobileBottomSheet({
         {/* Tab 1: Ikhtisar */}
         {activeTab === "ikhtisar" && (
           <div className="sheet-tab-pane">
-            <div className="sheet-stats-grid">
-              <div className="sheet-stat-box">
-                <span className="stat-label">ELEVASI TANAH</span>
-                <strong className="stat-val">{elevasiVal !== null ? `${elevasiVal} m dpl` : "Belum terdata"}</strong>
-                <span className="stat-source">Copernicus DEM GLO-90</span>
-              </div>
-              <div className="sheet-stat-box">
-                <span className="stat-label">CURAH HUJAN HARI INI</span>
-                <strong className="stat-val">{hujanVal !== null ? `${hujanVal} mm` : "0 mm"}</strong>
-                <span className="stat-source">Open-Meteo API</span>
-              </div>
-            </div>
-
             <div className="sheet-desc-box" style={{ borderLeftColor: badge.color }}>
               <div className="desc-box-title">
                 <IconShield size={16} color={badge.color} />
@@ -188,91 +117,30 @@ export default function MobileBottomSheet({
                 <IconInfo size={15} color="#176B65" />
                 <strong>Apa Artinya bagi Saya?</strong>
               </div>
-              <p className="meaning-text">
-                {elevasiVal !== null && elevasiVal < 5
-                  ? `Wilayah ini berada pada elevasi rendah (${elevasiVal} m dpl) mendekati muara/laut, sehingga pembuangan air hujan lebih lambat saat pasang laut (rob).`
-                  : `Wilayah ini berada pada elevasi ${elevasiVal ?? "-"} m dpl dengan kemiringan yang membantu gravitasi drainase.`}
+              <p className="meaning-text" style={{ marginBottom: "6px" }}>
+                {badge.key === "sangat_tinggi" || badge.key === "tinggi"
+                  ? "Wilayah ini tercatat memiliki kerentanan genangan banjir tinggi berdasarkan kontur elevasi rendah dan riwayat saluran drainase. Siapkan langkah mitigasi."
+                  : badge.key === "sedang"
+                    ? "Wilayah ini berpotensi terjadi genangan air di titik-titik cekungan saat curah hujan deras berlangsung lebih dari 2 jam."
+                    : "Berdasarkan data spasial saat ini, wilayah ini memiliki risiko genangan relatif rendah. Tetap pantau drainase lingkungan."}
               </p>
+              <div style={{ fontSize: "11px", color: "#64748B", background: "#F8FAFC", padding: "6px 8px", borderRadius: "6px" }}>
+                💡 <strong>Tips Warga:</strong> Amankan dokumen penting, simpan nomor darurat <strong>Call Center 112</strong>, dan cek jalur posko terdekat.
+              </div>
             </div>
 
-            {/* POSKO EVAKUASI TERDEKAT */}
-            {(() => {
-              const nearest =
-                POSKO_EVAKUASI_MAKASSAR.find(
-                  (p) =>
-                    selected.kecamatan &&
-                    p.kecamatan.toLowerCase().includes(selected.kecamatan.toLowerCase())
-                ) || POSKO_EVAKUASI_MAKASSAR[0];
+            <CitizenActionHub selected={selected} badge={badge} prakiraan={prakiraan} onShowRoute={onShowRoute} />
 
-              return (
-                <div className="shelter-info-box" style={{ marginTop: "10px" }}>
-                  <div className="shelter-box-header">
-                    <span style={{ fontSize: "18px" }}>⛺</span>
-                    <div>
-                      <strong style={{ fontSize: "12px", color: "#166534", display: "block" }}>
-                        Posko Evakuasi: {nearest.nama}
-                      </strong>
-                      <span style={{ fontSize: "11px", color: "#475569" }}>
-                        📍 {nearest.alamat} &bull; ±{nearest.kapasitas} Jiwa
-                      </span>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: "6px", marginTop: "8px" }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (onShowRoute) onShowRoute(selected, nearest);
-                      }}
-                      className="shelter-nav-btn"
-                    >
-                      🚶‍♂️ Rute Aman
-                    </button>
-                    <a
-                      href={`https://www.google.com/maps/dir/?api=1&destination=${nearest.latitude},${nearest.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="shelter-call-btn"
-                      style={{ background: "#F1F5F9", color: "#1E293B", textDecoration: "none" }}
-                    >
-                      🗺️ Maps
-                    </a>
-                    <a href={`tel:${nearest.kontak.replace(/[^0-9]/g, "") || "112"}`} className="shelter-call-btn">
-                      📞 Kontak
-                    </a>
-                  </div>
-                </div>
-              );
-            })()}
           </div>
         )}
 
         {/* Tab 2: Ketinggian Air Skala Manusia (Otomatis & Real-Time) */}
         {activeTab === "kedalaman" && (
           <div className="sheet-tab-pane">
-            <div className="auto-depth-header-banner" style={{ marginBottom: "12px" }}>
-              <div className="auto-depth-pill-row">
-                <span className={`auto-depth-mode-pill ${depthVal ? "pill-verified" : isSimulation ? "pill-sim" : "pill-auto"}`}>
-                  {depthVal ? "📡 Data Riil" : isSimulation ? "⚡ Mode Simulasi" : "🤖 Otomatis Sesuai Wilayah"}
-                </span>
-                <span className="auto-depth-area-name">{selected.nama_kelurahan}</span>
-              </div>
-              <div className="auto-depth-title-row">
-                <span className="auto-depth-caption">Estimasi Genangan:</span>
-                <strong
-                  className="auto-depth-value"
-                  style={{
-                    color: effectiveDepth >= 60 ? "#C53030" : effectiveDepth >= 30 ? "#DD6B20" : effectiveDepth > 0 ? "#D69E2E" : "#2F855A"
-                  }}
-                >
-                  {effectiveDepth} cm
-                </strong>
-              </div>
-            </div>
-
-            <FloodDepthVisualization
+            <FloodDepthEstimate
               depthCm={effectiveDepth}
-              isSimulation={!depthVal}
-              showImpactCards={true}
+              weatherCondition={selected.kondisi_bmkg}
+              updatedAt={selected.waktu_analisis}
             />
 
             <div style={{ marginTop: "12px" }}>
@@ -284,7 +152,7 @@ export default function MobileBottomSheet({
                 }}
               >
                 <IconSliders size={16} color="#FFFFFF" />
-                <span>Ubah Ketinggian di Simulator Interaktif</span>
+                <span>Coba Simulator Ketinggian Air</span>
               </button>
             </div>
           </div>
@@ -303,7 +171,10 @@ export default function MobileBottomSheet({
                 ⏳ Mengambil data cuaca BMKG...
               </p>
             ) : errorPrakiraan ? (
-              <p style={{ fontSize: "12px", color: "#C53030", padding: "8px 0" }}>⚠️ {errorPrakiraan}</p>
+              <div className="sheet-forecast-message sheet-forecast-error">
+                <p>⚠️ {errorPrakiraan}</p>
+                <button type="button" onClick={onRefreshPrakiraan}>Coba lagi</button>
+              </div>
             ) : prakiraan.length > 0 ? (
               <div className="sheet-weather-scroll">
                 {prakiraan.slice(0, 8).map((f, idx) => (
@@ -318,7 +189,10 @@ export default function MobileBottomSheet({
                 ))}
               </div>
             ) : (
-              <p style={{ fontSize: "12px", color: "#64748B" }}>Prakiraan cuaca spesifik belum tersedia.</p>
+              <div className="sheet-forecast-message">
+                <p>Prakiraan cuaca spesifik belum tersedia.</p>
+                <button type="button" onClick={onRefreshPrakiraan}>Perbarui prakiraan</button>
+              </div>
             )}
           </div>
         )}

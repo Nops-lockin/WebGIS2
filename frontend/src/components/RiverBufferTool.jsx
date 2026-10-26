@@ -62,8 +62,8 @@ export default function RiverBufferTool({
             <IconTarget size={18} color="#EA580C" />
           </div>
           <div>
-            <span className="buffer-eyebrow">ANALISIS SPASIAL GEOPROCESSING</span>
-            <h4 className="buffer-title">Radius Bahaya Luapan Sungai & Kanal</h4>
+          <span className="buffer-eyebrow">ANALISIS ZONA INDIKATIF</span>
+            <h4 className="buffer-title">Sempadan Sungai & Kanal</h4>
           </div>
         </div>
       </div>
@@ -140,7 +140,7 @@ export default function RiverBufferTool({
       <div className="buffer-hint-box">
         <IconInfo size={14} color="#64748B" />
         <span>
-          Garis sabuk bahaya ({bufferRadius}m) digambar di atas peta Leaflet sepanjang aliran {currentRiver.properties.nama}.
+          Koridor {bufferRadius} m dihitung dari garis sungai sebagai visualisasi sempadan indikatif. Ini bukan batas hukum, peta genangan, atau hasil model hidrodinamika.
         </span>
       </div>
     </div>

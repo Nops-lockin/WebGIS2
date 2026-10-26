@@ -1,64 +1,76 @@
 
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.database import engine
 from app.services.rain_sync import sync_curah_hujan_dan_banjir, last_sync_info
+from sync_prakiraan_bmkg import sync_prakiraan_bmkg
 
 scheduler = AsyncIOScheduler()
 
 
-#@asynccontextmanager
-#async def lifespan(app: FastAPI):
-#    # Menjalankan sinkronisasi curah hujan otomatis setiap 1 jam
-#    scheduler.add_job(
-#        sync_curah_hujan_dan_banjir,
-#        "interval",
-#        hours=1,
-#        id="sync_curah_hujan_job",
-#        replace_existing=True,
-#    )
-#    scheduler.start()
-#    yield
-#    scheduler.shutdown()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Memperbarui prakiraan BMKG tersimpan sebelum model kerawanan dijalankan.
+    scheduler.add_job(
+        sync_prakiraan_bmkg,
+        "interval",
+        hours=3,
+        id="sync_bmkg_forecast_job",
+        replace_existing=True,
+    )
+    # Menjalankan model kerawanan otomatis setiap 1 jam.
+    scheduler.add_job(
+        sync_curah_hujan_dan_banjir,
+        "interval",
+        hours=1,
+        id="sync_curah_hujan_job",
+        replace_existing=True,
+    )
+    scheduler.start()
+    yield
+    scheduler.shutdown()
 
 
 app = FastAPI(
-    title="WebGIS2MBC",
-    description="WebGIS potensi banjir dan rute evakuasi Kota Makassar",
+    title="JeneBosi (JB)",
+    description="JeneBosi (JB): WebGIS potensi banjir dan rute evakuasi Kota Makassar",
     version="1.3.0",
-    #lifespan=lifespan,
+    lifespan=lifespan,
 )
 
-@app.get("/api/cron/sync-weather")
-async def trigger_weather_sync():
-    try:
-        result = sync_curah_hujan_dan_banjir()
-        return {"status": "success", "data": result}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
 
 # =========================================================
 # 1. KONFIGURASI CORS
 # =========================================================
 
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # =========================================================
 # 2. BERANDA API
@@ -66,8 +78,11 @@ app.add_middleware(
 
 @app.get("/")
 def beranda():
+    index_file = Path(__file__).resolve().parents[2] / "frontend" / "dist" / "index.html"
+    if index_file.is_file():
+        return FileResponse(index_file)
     return {
-        "aplikasi": "WebGIS2MBC",
+        "aplikasi": "JeneBosi (JB)",
         "status": "aktif",
         "dokumentasi": "/docs",
     }
@@ -427,10 +442,12 @@ def get_banjir():
         JOIN LATERAL (
             SELECT
                 waktu_analisis,
-                hujan_mm,
-                elevasi_m,
                 tingkat,
-                metode
+                metode,
+                indeks_kerawanan,
+                estimasi_kedalaman_cm,
+                kondisi_bmkg,
+                sumber_model
             FROM public.potensi_banjir
             WHERE kelurahan_id = k.id
             ORDER BY waktu_analisis DESC
@@ -478,9 +495,10 @@ def get_banjir():
 @app.post("/api/banjir/analisis")
 def jalankan_analisis_banjir():
     """
-    Analisis indikatif menggunakan hujan terbaru dan elevasi titik.
-    Bukan model prediksi banjir tervalidasi.
+    Memperbarui hasil overlay berbobot menggunakan prakiraan BMKG tersimpan
+    dan parameter spasial di database.
     """
+    return sync_curah_hujan_dan_banjir()
 
     sumber_query = text("""
         SELECT
@@ -638,7 +656,6 @@ def get_banjir_geojson():
             k.kode_wilayah,
             k.nama_kelurahan,
             ST_AsGeoJSON(k.geom)::json AS geometry,
-            p.hujan_mm,
             p.tingkat,
             p.waktu_analisis,
             p.metode,
@@ -649,11 +666,13 @@ def get_banjir_geojson():
         FROM public.kelurahan k
         LEFT JOIN LATERAL (
             SELECT
-                hujan_mm,
-                elevasi_m,
                 tingkat,
                 waktu_analisis,
-                metode
+                metode,
+                indeks_kerawanan,
+                estimasi_kedalaman_cm,
+                kondisi_bmkg,
+                sumber_model
             FROM public.potensi_banjir
             WHERE kelurahan_id = k.id
             ORDER BY waktu_analisis DESC
@@ -673,7 +692,6 @@ def get_banjir_geojson():
             if row["geometry"] is None:
                 continue
 
-            hujan_mm = row["hujan_mm"]
             waktu_analisis = row["waktu_analisis"]
 
             features.append({
@@ -781,16 +799,34 @@ def prakiraan_bmkg(kode_wilayah: str):
     lokasi = hasil.get("lokasi") or {}
     prakiraan = []
 
-    for kelompok in hasil.get("data", []):
-        for rentang in kelompok.get("cuaca", []):
-            for item in rentang:
-                prakiraan.append({
-                    "waktu_lokal": item.get("local_datetime"),
-                    "suhu_c": item.get("t"),
-                    "kelembapan_persen": item.get("hu"),
-                    "parameter_tp": item.get("tp"),
-                    "kondisi": item.get("weather_desc"),
-                })
+    def tambah_item_prakiraan(node):
+        """Menerima bentuk respons BMKG lama maupun terbaru tanpa menggandakan item."""
+        if isinstance(node, list):
+            for item in node:
+                tambah_item_prakiraan(item)
+            return
+
+        if not isinstance(node, dict):
+            return
+
+        waktu = node.get("local_datetime") or node.get("datetime")
+        if waktu:
+            prakiraan.append({
+                "waktu_lokal": waktu,
+                "suhu_c": node.get("t") or node.get("temperature"),
+                "kelembapan_persen": node.get("hu") or node.get("humidity"),
+                "parameter_tp": node.get("tp"),
+                "kondisi": node.get("weather_desc") or node.get("weather"),
+            })
+            return
+
+        # Struktur BMKG dapat berupa data > cuaca > daftar rentang waktu,
+        # atau data > daftar rentang waktu langsung.
+        for key in ("cuaca", "data"):
+            if key in node:
+                tambah_item_prakiraan(node[key])
+
+    tambah_item_prakiraan(hasil.get("data", []))
 
     return {
         "sumber": "BMKG",
@@ -984,3 +1020,10 @@ async def get_maritim_pasut():
     _maritim_cache["data"] = result
 
     return result
+
+
+# Dipasang terakhir agar seluruh rute /api tetap ditangani FastAPI lebih dahulu.
+# Pada production, satu layanan menyajikan frontend React dan API pada domain sama.
+frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if frontend_dist.is_dir():
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

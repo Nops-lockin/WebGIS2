@@ -142,6 +142,48 @@ const RISK_COLORS = {
   belum: "#94A3B8",
 };
 
+// Membuat koridor sempadan dalam satuan meter, bukan sekadar memperlebar
+// garis SVG dalam piksel. Aproksimasi lokal ini memadai untuk visualisasi
+// skala kota; hasilnya tetap harus diperlakukan sebagai zona indikatif.
+function buildRiverBufferGeoJson(lineCoordinates, radiusMeters) {
+  if (!Array.isArray(lineCoordinates) || lineCoordinates.length < 2) return null;
+
+  const metersPerLatitudeDegree = 110540;
+  const features = [];
+
+  for (let index = 0; index < lineCoordinates.length - 1; index += 1) {
+    const [lon1, lat1] = lineCoordinates[index];
+    const [lon2, lat2] = lineCoordinates[index + 1];
+    const averageLatitudeRadians = ((lat1 + lat2) / 2) * (Math.PI / 180);
+    const metersPerLongitudeDegree = 111320 * Math.cos(averageLatitudeRadians);
+    const dx = (lon2 - lon1) * metersPerLongitudeDegree;
+    const dy = (lat2 - lat1) * metersPerLatitudeDegree;
+    const length = Math.hypot(dx, dy);
+
+    if (length === 0 || metersPerLongitudeDegree === 0) continue;
+
+    const offsetLon = ((-dy / length) * radiusMeters) / metersPerLongitudeDegree;
+    const offsetLat = ((dx / length) * radiusMeters) / metersPerLatitudeDegree;
+
+    features.push({
+      type: "Feature",
+      properties: {},
+      geometry: {
+        type: "Polygon",
+        coordinates: [[
+          [lon1 + offsetLon, lat1 + offsetLat],
+          [lon2 + offsetLon, lat2 + offsetLat],
+          [lon2 - offsetLon, lat2 - offsetLat],
+          [lon1 - offsetLon, lat1 - offsetLat],
+          [lon1 + offsetLon, lat1 + offsetLat],
+        ]],
+      },
+    });
+  }
+
+  return features.length ? { type: "FeatureCollection", features } : null;
+}
+
 function MapResetFocus({ trigger }) {
   const map = useMap();
   useEffect(() => {
@@ -175,6 +217,25 @@ function UserLocationFocus({ location }) {
       map.flyTo(location, 14, { duration: 1.2 });
     } catch (_) {}
   }, [location, map]);
+  return null;
+}
+
+function MapResizeHandler() {
+  const map = useMap();
+  useEffect(() => {
+    const handleResize = () => {
+      map.invalidateSize();
+    };
+    window.addEventListener("resize", handleResize);
+    // Invalidate saat mount dan setelah animasi/transisi layout HP selesai
+    const t1 = setTimeout(() => map.invalidateSize(), 150);
+    const t2 = setTimeout(() => map.invalidateSize(), 500);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [map]);
   return null;
 }
 
@@ -263,7 +324,20 @@ export default function FloodMap({
 
   // Layer toggles
   const [showPosko, setShowPosko] = useState(true);
-  const [showKanal, setShowKanal] = useState(true);
+  // Layer tambahan tidak ditampilkan saat awal agar peta risiko tetap bersih.
+  const [showKanal, setShowKanal] = useState(false);
+
+  const activeRiverFeature = useMemo(
+    () => KANAL_DAN_SUNGAI_MAKASSAR.features.find(
+      (feature) => feature.properties.id === activeBufferRiver
+    ) || null,
+    [activeBufferRiver]
+  );
+
+  const riverBufferGeoJson = useMemo(
+    () => buildRiverBufferGeoJson(activeRiverFeature?.geometry?.coordinates, bufferRadius),
+    [activeRiverFeature, bufferRadius]
+  );
 
   // FITUR 6 (Slider Komparasi Peta)
   const [compareMode, setCompareMode] = useState(false);
@@ -375,10 +449,19 @@ export default function FloodMap({
       if (isSimulation && simulationState) {
         const simRain = simulationState.rainMm ?? 0;
         const simTide = simulationState.tideM ?? 0.45;
-        const isCoastal = elev !== null && elev < 4.5;
+        const lowerName = (nama || "").toLowerCase();
+        const isCoastal =
+          (elev !== null && elev < 4.5) ||
+          ["mariso", "tallo", "buloa", "gusung", "camba berua", "ujung tanah", "tanjung merdeka"].some((k) => lowerName.includes(k));
         const isBasin = ["antang", "manggala", "tamalanrea", "tamangapa", "karunrung"].some((k) =>
-          (nama || "").toLowerCase().includes(k)
+          lowerName.includes(k)
         );
+
+        const baseIndex = Number(b?.indeks_kerawanan) || 250;
+        const staticPressure = Math.max(0, Math.min(20, (baseIndex - 180) / 12));
+        const simulatedDepth = Math.max(0, Math.min(150, Math.round((
+          (simRain / 180) * 75 + ((simTide - 0.3) / 1.5) * 30 + staticPressure + (isCoastal ? 10 : 0)
+        ) / 5) * 5));
 
         let simTingkat = "rendah";
         if (simRain >= 120 || (simRain >= 70 && simTide >= 1.35) || (isCoastal && simTide >= 1.45)) {
@@ -401,6 +484,9 @@ export default function FloodMap({
               : "Aman (Simulasi)",
           elevasi: elev,
           hujan: simRain,
+          estimasiKedalamanCm: simulatedDepth,
+          kondisiBmkg: `Skenario: ${simulationState.nama || "Kustom"}`,
+          waktuAnalisis: new Date().toISOString(),
         };
       }
 
@@ -531,7 +617,7 @@ export default function FloodMap({
 
   return (
     <div id="peta" className="flood-map-wrapper">
-      {/* Search & Filter Toolbar di Atas Peta */}
+      {/* Kontrol ringkas: pencarian tersimpan untuk HP, filter diringkas jadi satu pilihan. */}
       <div className="map-toolbar">
         <div className="map-search-box">
           <IconSearch size={16} color="#64748B" />
@@ -555,49 +641,22 @@ export default function FloodMap({
           )}
         </div>
 
-        {/* Filter Chips Berdasarkan Kategori Risiko */}
-        <div className="map-filter-chips">
-          <button
-            type="button"
-            className={`filter-chip ${filter === "semua" ? "active" : ""}`}
-            onClick={() => onFilterChange("semua")}
-          >
-            Semua ({summary.total})
-          </button>
-          <button
-            type="button"
-            className={`filter-chip chip-aman ${filter === "rendah" ? "active" : ""}`}
-            onClick={() => onFilterChange("rendah")}
-          >
-            <span className="chip-dot" style={{ backgroundColor: "#2F855A" }} />
-            Aman ({summary.rendah})
-          </button>
-          <button
-            type="button"
-            className={`filter-chip chip-waspada ${filter === "sedang" ? "active" : ""}`}
-            onClick={() => onFilterChange("sedang")}
-          >
-            <span className="chip-dot" style={{ backgroundColor: "#D69E2E" }} />
-            Waspada ({summary.sedang})
-          </button>
-          <button
-            type="button"
-            className={`filter-chip chip-siaga ${filter === "tinggi" ? "active" : ""}`}
-            onClick={() => onFilterChange("tinggi")}
-          >
-            <span className="chip-dot" style={{ backgroundColor: "#DD6B20" }} />
-            Siaga ({summary.tinggi})
-          </button>
-          <button
-            type="button"
-            className={`filter-chip chip-bahaya ${filter === "sangat_tinggi" ? "active" : ""}`}
-            onClick={() => onFilterChange("sangat_tinggi")}
-          >
-            <span className="chip-dot" style={{ backgroundColor: "#C53030" }} />
-            Bahaya ({summary.sangat_tinggi})
-          </button>
+        <div className="map-toolbar-context">
+          <span>Status wilayah</span>
+          <strong>Pilih area pada peta</strong>
+        </div>
 
-          <span className="chips-divider">|</span>
+        <div className="map-filter-chips">
+          <label className="risk-filter-select">
+            <span className="sr-only">Filter status risiko</span>
+            <select value={filter} onChange={(event) => onFilterChange(event.target.value)} aria-label="Filter status risiko">
+              <option value="semua">Semua wilayah ({summary.total})</option>
+              <option value="rendah">Aman ({summary.rendah})</option>
+              <option value="sedang">Waspada ({summary.sedang})</option>
+              <option value="tinggi">Siaga ({summary.tinggi})</option>
+              <option value="sangat_tinggi">Bahaya ({summary.sangat_tinggi})</option>
+            </select>
+          </label>
 
           {/* Toggle Layer Posko */}
           <button
@@ -605,15 +664,15 @@ export default function FloodMap({
             className={`filter-chip ${showPosko ? "active-layer" : ""}`}
             onClick={() => {
               setShowPosko((p) => !p);
-              showToast(!showPosko ? "📍 Layer Posko Evakuasi aktif" : "Layer Posko disembunyikan");
+              showToast(!showPosko ? "Layer posko evakuasi ditampilkan" : "Layer posko disembunyikan");
             }}
             title="Tampilkan / Sembunyikan Titik Posko Evakuasi Makassar"
           >
-            ⛺ Posko ({POSKO_EVAKUASI_MAKASSAR.length})
+            Posko ({POSKO_EVAKUASI_MAKASSAR.length})
           </button>
 
           {/* Toggle Layer Kanal */}
-          {!publicMode && <button
+          <button
             type="button"
             className={`filter-chip ${showKanal ? "active-layer" : ""}`}
             onClick={() => {
@@ -623,10 +682,10 @@ export default function FloodMap({
             title="Tampilkan / Sembunyikan Jaringan Kanal & Sungai Utama"
           >
             🌊 Kanal & Sungai ({KANAL_DAN_SUNGAI_MAKASSAR.features.length})
-          </button>}
+          </button>
 
           {/* FITUR 4: TOOL BUFFER SEMPADAN KANAL */}
-          {!publicMode && <button
+          <button
             type="button"
             className={`filter-chip ${bufferToolOpen ? "active-buffer-btn" : ""}`}
             onClick={() => {
@@ -637,7 +696,7 @@ export default function FloodMap({
           >
             <IconTarget size={13} color={bufferToolOpen ? "#FFFFFF" : "#EA580C"} />
             <span>Sempadan Kanal ({bufferRadius}m)</span>
-          </button>}
+          </button>
 
           {/* FITUR 6 (REKOMENDASI USER): FASILITAS KRITIS RADAR */}
           <div className="map-btn-dropdown-wrap" style={{ display: "inline-block" }}>
@@ -647,7 +706,7 @@ export default function FloodMap({
               onClick={() => setFacilityMenuOpen((p) => !p)}
               title="Filter fasilitas kritis: Rumah Sakit, BPBD/Damkar, Tempat Ibadah Tinggi, SPBU"
             >
-              <span>🏢 Fasilitas Kritis</span>
+              <span>Fasilitas</span>
               <span style={{ fontSize: "10px", marginLeft: "2px" }}>▼</span>
             </button>
 
@@ -728,6 +787,7 @@ export default function FloodMap({
             style={{ width: "100%", height: "100%" }}
           >
             <MapCompareController compareMode={compareMode} comparePos={comparePos} />
+            <MapResizeHandler />
 
             {compareMode ? (
               <>
@@ -777,40 +837,24 @@ export default function FloodMap({
             <MapResetFocus trigger={resetCount} />
 
             {/* FITUR 4: DYNAMIC BUFFER ZONE SEMPADAN KANAL */}
-            {activeBufferRiver &&
-              (() => {
-                const feat = KANAL_DAN_SUNGAI_MAKASSAR.features.find(
-                  (f) => f.properties.id === activeBufferRiver
-                );
-                if (!feat) return null;
-                const coords = feat.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-
-                return (
-                  <React.Fragment key={`buffer-overlay-${activeBufferRiver}-${bufferRadius}`}>
-                    {/* Sabuk Bahaya Luapan Buffer Zone */}
-                    <Polyline
-                      positions={coords}
-                      pathOptions={{
-                        color: "#EF4444",
-                        weight: Math.min(65, Math.max(16, bufferRadius / 8)),
-                        opacity: 0.35,
-                        lineCap: "round",
-                        lineJoin: "round",
-                      }}
-                    />
-                    {/* Garis Pusat Sungai Berdenyut */}
-                    <Polyline
-                      positions={coords}
-                      pathOptions={{
-                        color: "#DC2626",
-                        weight: 3.5,
-                        dashArray: "8, 6",
-                        opacity: 0.9,
-                      }}
-                    />
-                  </React.Fragment>
-                );
-              })()}
+            {bufferToolOpen && activeRiverFeature && riverBufferGeoJson && (
+              <React.Fragment key={`buffer-overlay-${activeBufferRiver}-${bufferRadius}`}>
+                <GeoJSON
+                  data={riverBufferGeoJson}
+                  style={{
+                    color: "#D97706",
+                    weight: 1,
+                    opacity: 0.75,
+                    fillColor: "#F59E0B",
+                    fillOpacity: 0.22,
+                  }}
+                />
+                <Polyline
+                  positions={activeRiverFeature.geometry.coordinates.map(([lng, lat]) => [lat, lng])}
+                  pathOptions={{ color: "#0F766E", weight: 4, opacity: 0.95 }}
+                />
+              </React.Fragment>
+            )}
 
             {/* LAYER JARINGAN KANAL & SUNGAI UTAMA */}
             {showKanal && (
@@ -835,6 +879,7 @@ export default function FloodMap({
                   layer.on({
                     click: () => {
                       if (onChangeBufferRiver) onChangeBufferRiver(p.id);
+                      if (!bufferToolOpen && onToggleBufferTool) onToggleBufferTool();
                       showToast(`Analisis sempadan ${p.nama} (${bufferRadius}m)`);
                     },
                   });

@@ -1,12 +1,10 @@
 import React, { useState } from "react";
-import { POSKO_EVAKUASI_MAKASSAR } from "../data/evakuasiDanKanal";
 import FloodDepthEstimate from "./FloodDepthEstimate";
+import CitizenActionHub from "./CitizenActionHub";
 import {
   IconClose,
   IconShield,
-  IconPhone,
   IconInfo,
-  IconWhatsApp,
 } from "../Icons";
 
 export function getRiskBadge(tingkatStr) {
@@ -67,6 +65,7 @@ export default function SelectedAreaPanel({
   prakiraan = [],
   loadingPrakiraan = false,
   errorPrakiraan = "",
+  onRefreshPrakiraan,
   onShowRoute,
 }) {
   const [panelTab, setPanelTab] = useState("ikhtisar");
@@ -92,38 +91,6 @@ export default function SelectedAreaPanel({
     return points;
   };
 
-  // FITUR 1: Bagikan Peringatan Kelurahan ke WhatsApp
-  const handleShareWhatsApp = () => {
-    const nearest =
-      POSKO_EVAKUASI_MAKASSAR.find(
-        (p) =>
-          selected.kecamatan &&
-          p.kecamatan.toLowerCase().includes(selected.kecamatan.toLowerCase())
-      ) || POSKO_EVAKUASI_MAKASSAR[0];
-
-    const lines = [
-      `🚨 *PERINGATAN INFORMASI BANJIR KOTA MAKASSAR*`,
-      `📍 *Wilayah:* Kel. ${selected.nama_kelurahan}, Kec. ${selected.kecamatan || "Makassar"}`,
-      `⚠️ *Status Kerentanan:* ${badge.label.toUpperCase()}`,
-      `🌊 *Estimasi Genangan:* ${selected.estimasi_kedalaman_cm ?? 0} cm (indikatif)`,
-      ``,
-      `⛺ *Posko Evakuasi Terdekat:*`,
-      `• *Nama:* ${nearest.nama}`,
-      `• *Alamat:* ${nearest.alamat}`,
-      `• *Kapasitas:* ±${nearest.kapasitas} Jiwa`,
-      `• *Rute Maps Langsung:* https://www.google.com/maps/dir/?api=1&destination=${nearest.latitude},${nearest.longitude}`,
-      ``,
-      `📞 *Call Center Bencana Makassar:* 112 (Bebas Pulsa)`,
-      `🌐 *Lihat Peta Spasial WebGIS:* ${typeof window !== "undefined" ? window.location.origin : "https://webgis-banjir-makassar.id"}`,
-      ``,
-      `_Pemberitahuan resmi dari Sistem Mitigasi Bencana WebGIS Kota Makassar_`,
-    ];
-
-    const text = lines.join("\n");
-    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-    window.open(url, "_blank");
-  };
-
   return (
     <div className="selected-area-card" role="region" aria-label={`Detail Risiko Kelurahan ${selected.nama_kelurahan}`}>
       {/* Header Panel */}
@@ -132,7 +99,7 @@ export default function SelectedAreaPanel({
           <span className="selected-eyebrow">KELURAHAN TERPILIH</span>
           <h2 className="selected-title">{selected.nama_kelurahan}</h2>
           <span className="selected-sub">
-            {selected.kecamatan ? `Kecamatan ${selected.kecamatan}` : "Kota Makassar"} &bull; Kode: {selected.kode_wilayah || "-"}
+            {selected.kecamatan ? `Kecamatan ${selected.kecamatan}` : "Kota Makassar"}
           </span>
         </div>
 
@@ -161,11 +128,10 @@ export default function SelectedAreaPanel({
         <p className="risk-hero-desc">{badge.desc}</p>
       </div>
 
-      <FloodDepthEstimate
-        depthCm={selected.estimasi_kedalaman_cm}
-        weatherCondition={selected.kondisi_bmkg}
-        updatedAt={selected.waktu_analisis}
-      />
+      {/* Aksi warga dipasang di luar area gulir agar selalu terlihat pada laptop. */}
+      {panelTab === "ikhtisar" && (
+        <CitizenActionHub selected={selected} badge={badge} prakiraan={prakiraan} onShowRoute={onShowRoute} />
+      )}
 
       {/* Tab Navigasi Panel */}
       <div className="selected-panel-tabs">
@@ -188,6 +154,12 @@ export default function SelectedAreaPanel({
       {/* Konten Tab 1: Ikhtisar Wilayah & Data Fisik */}
       {panelTab === "ikhtisar" && (
         <div className="panel-tab-content">
+          <FloodDepthEstimate
+            depthCm={selected.estimasi_kedalaman_cm}
+            weatherCondition={selected.kondisi_bmkg}
+            updatedAt={selected.waktu_analisis}
+          />
+
           {/* Bagian: Apa Artinya bagi Saya? */}
           <div className="meaning-section">
             <div className="meaning-title">
@@ -210,74 +182,6 @@ export default function SelectedAreaPanel({
               <li>Jangan biarkan anak-anak bermain di tepi saluran air atau selokan.</li>
               <li>Simpan nomor darurat <strong>Call Center Makassar 112</strong> di ponsel Anda.</li>
             </ul>
-          </div>
-
-          {/* FITUR 1: POSKO EVAKUASI TERDEKAT */}
-          {(() => {
-            const nearest =
-              POSKO_EVAKUASI_MAKASSAR.find(
-                (p) =>
-                  selected.kecamatan &&
-                  p.kecamatan.toLowerCase().includes(selected.kecamatan.toLowerCase())
-              ) || POSKO_EVAKUASI_MAKASSAR[0];
-
-            return (
-              <div className="shelter-info-box">
-                <div className="shelter-box-header">
-                  <span style={{ fontSize: "18px" }}>⛺</span>
-                  <div>
-                    <strong style={{ fontSize: "12px", color: "#166534", display: "block" }}>
-                      Posko Evakuasi Terdekat: {nearest.nama}
-                    </strong>
-                    <span style={{ fontSize: "11px", color: "#475569" }}>
-                      📍 {nearest.alamat} &bull; Kapasitas: ±{nearest.kapasitas} Jiwa
-                    </span>
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: "6px", marginTop: "8px" }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onShowRoute) onShowRoute(selected, nearest);
-                    }}
-                    className="shelter-nav-btn"
-                    title="Gambar rute evakuasi teraman langsung di peta WebGIS"
-                  >
-                    🚶‍♂️ Rute Evakuasi Aman
-                  </button>
-                  <a
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${nearest.latitude},${nearest.longitude}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="shelter-call-btn"
-                    style={{ background: "#F1F5F9", color: "#1E293B", textDecoration: "none" }}
-                  >
-                    🗺️ Maps
-                  </a>
-                  <a href={`tel:${nearest.kontak.replace(/[^0-9]/g, "") || "112"}`} className="shelter-call-btn">
-                    📞 Kontak
-                  </a>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* FITUR 1: Aksi Cepat Bagikan WhatsApp & Call Center 112 */}
-          <div className="panel-actions-row">
-            <button
-              type="button"
-              className="panel-whatsapp-btn"
-              onClick={handleShareWhatsApp}
-              title="Kirim detail peringatan kelurahan ini ke grup WhatsApp warga / keluarga"
-            >
-              <IconWhatsApp size={16} color="#FFFFFF" />
-              <span>Bagikan Peringatan ke WhatsApp</span>
-            </button>
-
-            <a href="tel:112" className="panel-call-btn">
-              <IconPhone size={16} color="#FFFFFF" />
-              <span>Call 112</span>
-            </a>
           </div>
 
         </div>
@@ -305,6 +209,7 @@ export default function SelectedAreaPanel({
           ) : errorPrakiraan ? (
             <div className="forecast-error-state">
               <span>⚠️ {errorPrakiraan}</span>
+              <button type="button" onClick={onRefreshPrakiraan}>Coba lagi</button>
             </div>
           ) : prakiraan.length > 0 ? (
             <div className="forecast-cards-scroll">
@@ -327,7 +232,8 @@ export default function SelectedAreaPanel({
             </div>
           ) : (
             <div className="forecast-empty-state">
-              <p>Prakiraan cuaca spesifik belum tersedia untuk kelurahan ini. Menampilkan kondisi umum Makassar.</p>
+              <p>Prakiraan cuaca spesifik belum tersedia untuk kelurahan ini.</p>
+              <button type="button" onClick={onRefreshPrakiraan}>Perbarui prakiraan</button>
             </div>
           )}
 
