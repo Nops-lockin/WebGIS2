@@ -19,27 +19,27 @@ from sync_prakiraan_bmkg import sync_prakiraan_bmkg
 scheduler = AsyncIOScheduler()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+#@asynccontextmanager
+#async def lifespan(app: FastAPI):
     # Memperbarui prakiraan BMKG tersimpan sebelum model kerawanan dijalankan.
-    scheduler.add_job(
-        sync_prakiraan_bmkg,
-        "interval",
-        hours=3,
-        id="sync_bmkg_forecast_job",
-        replace_existing=True,
-    )
+#    scheduler.add_job(
+#        sync_prakiraan_bmkg,
+#        "interval",
+#        hours=3,
+#        id="sync_bmkg_forecast_job",
+#        replace_existing=True,
+#    )
     # Menjalankan model kerawanan otomatis setiap 1 jam.
-    scheduler.add_job(
-        sync_curah_hujan_dan_banjir,
-        "interval",
-        hours=1,
-        id="sync_curah_hujan_job",
-        replace_existing=True,
-    )
-    scheduler.start()
-    yield
-    scheduler.shutdown()
+#    scheduler.add_job(
+#        sync_curah_hujan_dan_banjir,
+#        "interval",
+#        hours=1,
+#        id="sync_curah_hujan_job",
+#        replace_existing=True,
+#    )
+#    scheduler.start()
+#    yield
+#    scheduler.shutdown()
 
 
 app = FastAPI(
