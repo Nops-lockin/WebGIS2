@@ -98,7 +98,6 @@ export default function App() {
   // FITUR 4: RADIUS BAHAYA LUAPAN KANAL (BUFFER ZONE)
   const [activeBufferRiver, setActiveBufferRiver] = useState("kanal-panampu");
   const [bufferRadius, setBufferRadius] = useState(250);
-  const [bufferToolOpen, setBufferToolOpen] = useState(false);
 
   // FITUR 6: FASILITAS KRITIS RADAR
   const [facilityCategory, setFacilityCategory] = useState("semua");
@@ -625,8 +624,6 @@ export default function App() {
             bufferRadius={bufferRadius}
             onChangeBufferRiver={setActiveBufferRiver}
             onChangeBufferRadius={setBufferRadius}
-            bufferToolOpen={bufferToolOpen}
-            onToggleBufferTool={() => setBufferToolOpen((p) => !p)}
             // FACILITY PROPS
             facilityCategory={facilityCategory}
             onChangeFacilityCategory={setFacilityCategory}

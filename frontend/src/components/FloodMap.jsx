@@ -32,7 +32,7 @@ import {
   KATEGORI_FASILITAS,
 } from "../data/fasilitasKritis";
 import EvacuationRouteCard from "./EvacuationRouteCard";
-import RiverBufferTool from "./RiverBufferTool";
+// import RiverBufferTool removed
 
 // Fungsi Icon Khusus Posko Evakuasi
 function createPoskoIcon(kategori) {
@@ -305,8 +305,8 @@ export default function FloodMap({
   bufferRadius = 250,
   onChangeBufferRiver,
   onChangeBufferRadius,
-  bufferToolOpen = false,
-  onToggleBufferTool,
+  // bufferToolOpen removed
+  // onToggleBufferTool removed
   // FITUR 6: FASILITAS KRITIS RADAR PROPS
   facilityCategory = "semua",
   onChangeFacilityCategory,
@@ -325,7 +325,7 @@ export default function FloodMap({
   // Layer toggles
   const [showPosko, setShowPosko] = useState(true);
   // Layer tambahan tidak ditampilkan saat awal agar peta risiko tetap bersih.
-  const [showKanal, setShowKanal] = useState(false);
+  // showKanal state removed
 
   const activeRiverFeature = useMemo(
     () => KANAL_DAN_SUNGAI_MAKASSAR.features.find(
@@ -685,18 +685,7 @@ export default function FloodMap({
           </button>
 
           {/* FITUR 4: TOOL BUFFER SEMPADAN KANAL */}
-          <button
-            type="button"
-            className={`filter-chip ${bufferToolOpen ? "active-buffer-btn" : ""}`}
-            onClick={() => {
-              if (onToggleBufferTool) onToggleBufferTool();
-              showToast(!bufferToolOpen ? "🎯 Analisis Radius Sempadan Kanal Aktif" : "Analisis Sempadan Ditutup");
-            }}
-            title="Analisis radius bahaya luapan sempadan kanal dan sungai"
-          >
-            <IconTarget size={13} color={bufferToolOpen ? "#FFFFFF" : "#EA580C"} />
-            <span>Sempadan Kanal ({bufferRadius}m)</span>
-          </button>
+// Buffer tool button removed
 
           {/* FITUR 6 (REKOMENDASI USER): FASILITAS KRITIS RADAR */}
           <div className="map-btn-dropdown-wrap" style={{ display: "inline-block" }}>
