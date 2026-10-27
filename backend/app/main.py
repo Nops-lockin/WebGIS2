@@ -208,34 +208,59 @@ def get_banjir():
 # ==========================================================
 # The frontend tries /api/bmkg/prakiraan/{kode_wilayah} first,
 # then falls back to /api/prakiraan/{kode_wilayah}.
+# The frontend's normalisasiPrakiraan() expects objects with:
+#   waktu_lokal | datetime | waktu, suhu_c | suhu, kelembapan_persen,
+#   kondisi | weather_desc | cuaca
 # ----------------------------------------------------------
 @app.get("/api/bmkg/prakiraan/{kode_wilayah}")
 @app.get("/api/prakiraan/{kode_wilayah}")
 def get_prakiraan(kode_wilayah: str):
     """Return BMKG weather forecasts for a kelurahan by kode_wilayah."""
-    query = text(
+    # First try: future forecasts
+    # Fallback: most recent forecasts (even if in the past) so the panel
+    # is never empty as long as any data has been synced at least once.
+    query_future = text(
         """
         SELECT
             pb.id,
             pb.kelurahan_id,
             k.nama_kelurahan,
-            pb.kondisi_cuaca,
-            pb.suhu_celcius,
+            pb.kondisi_cuaca  AS kondisi,
+            pb.suhu_c,
             pb.kelembapan_persen,
-            pb.kecepatan_angin_kmh,
-            pb.arah_angin,
-            pb.waktu_prakiraan
+            pb.waktu_prakiraan AS waktu_lokal,
+            pb.sumber
         FROM public.prakiraan_bmkg pb
         JOIN public.kelurahan k ON k.id = pb.kelurahan_id
         WHERE k.kode_wilayah = :kode_wilayah
-          AND pb.waktu_prakiraan >= LOCALTIMESTAMP
+          AND pb.waktu_prakiraan >= (NOW() - INTERVAL '6 hours')
         ORDER BY pb.waktu_prakiraan
+        LIMIT 20
+        """
+    )
+    query_latest = text(
+        """
+        SELECT
+            pb.id,
+            pb.kelurahan_id,
+            k.nama_kelurahan,
+            pb.kondisi_cuaca  AS kondisi,
+            pb.suhu_c,
+            pb.kelembapan_persen,
+            pb.waktu_prakiraan AS waktu_lokal,
+            pb.sumber
+        FROM public.prakiraan_bmkg pb
+        JOIN public.kelurahan k ON k.id = pb.kelurahan_id
+        WHERE k.kode_wilayah = :kode_wilayah
+        ORDER BY pb.waktu_prakiraan DESC
         LIMIT 20
         """
     )
     try:
         with engine.connect() as conn:
-            rows = conn.execute(query, {"kode_wilayah": kode_wilayah}).mappings().all()
+            rows = conn.execute(query_future, {"kode_wilayah": kode_wilayah}).mappings().all()
+            if not rows:
+                rows = conn.execute(query_latest, {"kode_wilayah": kode_wilayah}).mappings().all()
         prakiraan = [dict(r) for r in rows]
         return {"prakiraan": prakiraan}
     except Exception as exc:
@@ -333,34 +358,59 @@ def get_banjir():
 # ==========================================================
 # The frontend tries /api/bmkg/prakiraan/{kode_wilayah} first,
 # then falls back to /api/prakiraan/{kode_wilayah}.
+# The frontend's normalisasiPrakiraan() expects objects with:
+#   waktu_lokal | datetime | waktu, suhu_c | suhu, kelembapan_persen,
+#   kondisi | weather_desc | cuaca
 # ----------------------------------------------------------
 @app.get("/api/bmkg/prakiraan/{kode_wilayah}")
 @app.get("/api/prakiraan/{kode_wilayah}")
 def get_prakiraan(kode_wilayah: str):
     """Return BMKG weather forecasts for a kelurahan by kode_wilayah."""
-    query = text(
+    # First try: future forecasts
+    # Fallback: most recent forecasts (even if in the past) so the panel
+    # is never empty as long as any data has been synced at least once.
+    query_future = text(
         """
         SELECT
             pb.id,
             pb.kelurahan_id,
             k.nama_kelurahan,
-            pb.kondisi_cuaca,
-            pb.suhu_celcius,
+            pb.kondisi_cuaca  AS kondisi,
+            pb.suhu_c,
             pb.kelembapan_persen,
-            pb.kecepatan_angin_kmh,
-            pb.arah_angin,
-            pb.waktu_prakiraan
+            pb.waktu_prakiraan AS waktu_lokal,
+            pb.sumber
         FROM public.prakiraan_bmkg pb
         JOIN public.kelurahan k ON k.id = pb.kelurahan_id
         WHERE k.kode_wilayah = :kode_wilayah
-          AND pb.waktu_prakiraan >= LOCALTIMESTAMP
+          AND pb.waktu_prakiraan >= (NOW() - INTERVAL '6 hours')
         ORDER BY pb.waktu_prakiraan
+        LIMIT 20
+        """
+    )
+    query_latest = text(
+        """
+        SELECT
+            pb.id,
+            pb.kelurahan_id,
+            k.nama_kelurahan,
+            pb.kondisi_cuaca  AS kondisi,
+            pb.suhu_c,
+            pb.kelembapan_persen,
+            pb.waktu_prakiraan AS waktu_lokal,
+            pb.sumber
+        FROM public.prakiraan_bmkg pb
+        JOIN public.kelurahan k ON k.id = pb.kelurahan_id
+        WHERE k.kode_wilayah = :kode_wilayah
+        ORDER BY pb.waktu_prakiraan DESC
         LIMIT 20
         """
     )
     try:
         with engine.connect() as conn:
-            rows = conn.execute(query, {"kode_wilayah": kode_wilayah}).mappings().all()
+            rows = conn.execute(query_future, {"kode_wilayah": kode_wilayah}).mappings().all()
+            if not rows:
+                rows = conn.execute(query_latest, {"kode_wilayah": kode_wilayah}).mappings().all()
         prakiraan = [dict(r) for r in rows]
         return {"prakiraan": prakiraan}
     except Exception as exc:
