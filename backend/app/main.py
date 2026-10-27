@@ -39,12 +39,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve static assets from the built frontend
-app.mount(
-    "/static",
-    StaticFiles(directory=Path(__file__).resolve().parents[2] / "frontend" / "dist", html=True),
-    name="static",
-)
 
 # ----------------------------------------------------------
 # 1. Root endpoint – serve the SPA index.html
@@ -55,6 +49,7 @@ def beranda():
     if index_file.is_file():
         return FileResponse(index_file)
     return {"aplikasi": "JeneBosi (JB)", "status": "aktif", "dokumentasi": "/docs"}
+
 
 # ----------------------------------------------------------
 # 2. Health check
@@ -70,6 +65,7 @@ def health():
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Koneksi database gagal: {str(exc)}") from exc
 
+
 # ----------------------------------------------------------
 # 3. Cron endpoint for weather sync
 # ----------------------------------------------------------
@@ -81,6 +77,7 @@ async def trigger_weather_sync():
         return {"status": "success", "data": result}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
 
 # ----------------------------------------------------------
 # 4. Kelurahan list & search
@@ -105,6 +102,7 @@ def daftar_kelurahan(q: str = Query(default="", max_length=100)):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Gagal mengambil data kelurahan: {str(exc)}") from exc
 
+
 # ----------------------------------------------------------
 # 5. Kelurahan GeoJSON
 # ----------------------------------------------------------
@@ -128,11 +126,16 @@ def get_kelurahan_geojson():
             features.append({
                 "type": "Feature",
                 "geometry": row["geometry"],
-                "properties": {"id": row["id"], "kode_wilayah": row["kode_wilayah"], "nama_kelurahan": row["nama_kelurahan"]},
+                "properties": {
+                    "id": row["id"],
+                    "kode_wilayah": row["kode_wilayah"],
+                    "nama_kelurahan": row["nama_kelurahan"],
+                },
             })
         return {"type": "FeatureCollection", "total": len(features), "features": features}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Gagal mengambil GeoJSON kelurahan: {str(exc)}") from exc
+
 
 # ----------------------------------------------------------
 # 6. Latest rainfall for a kelurahan
@@ -141,11 +144,12 @@ def get_kelurahan_geojson():
 def get_hujan_terbaru(kelurahan_id: int):
     query = text(
         """
-        SELECT k.id AS kelurahan_id, k.nama_kelurahan, r.tanggal, r.curah_hujan
+        SELECT k.id AS kelurahan_id, k.nama_kelurahan,
+               ch.waktu_pengamatan AS tanggal, ch.nilai_mm AS curah_hujan
         FROM public.kelurahan k
-        JOIN public.curah_hujan r ON k.id = r.kelurahan_id
+        JOIN public.curah_hujan ch ON k.id = ch.kelurahan_id
         WHERE k.id = :kelurahan_id
-        ORDER BY r.tanggal DESC
+        ORDER BY ch.waktu_pengamatan DESC
         LIMIT 1
         """
     )
@@ -157,3 +161,254 @@ def get_hujan_terbaru(kelurahan_id: int):
         raise HTTPException(status_code=404, detail="Data hujan tidak ditemukan")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Gagal mengambil data hujan: {str(exc)}") from exc
+
+
+# ==========================================================
+# 7. FLOOD RISK DATA (potensi_banjir) — REQUIRED BY FRONTEND
+# ==========================================================
+# The frontend (App.jsx) fetches /api/banjir on mount and uses
+# it to colour every kelurahan polygon and populate risk counts.
+# ----------------------------------------------------------
+@app.get("/api/banjir")
+def get_banjir():
+    """Return the latest flood-risk row for every kelurahan."""
+    query = text(
+        """
+        SELECT
+            pb.kelurahan_id,
+            k.nama_kelurahan,
+            k.kode_wilayah,
+            pb.tingkat,
+            pb.hujan_mm,
+            pb.elevasi_m,
+            pb.indeks_kerawanan,
+            pb.estimasi_kedalaman_cm,
+            pb.kondisi_bmkg,
+            pb.waktu_analisis,
+            pb.metode,
+            pb.sumber_model
+        FROM public.potensi_banjir pb
+        JOIN public.kelurahan k ON k.id = pb.kelurahan_id
+        ORDER BY k.nama_kelurahan
+        """
+    )
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(query).mappings().all()
+        return [dict(r) for r in rows]
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Gagal mengambil data potensi banjir: {str(exc)}",
+        ) from exc
+
+
+# ==========================================================
+# 8. BMKG WEATHER FORECAST — REQUIRED BY FRONTEND
+# ==========================================================
+# The frontend tries /api/bmkg/prakiraan/{kode_wilayah} first,
+# then falls back to /api/prakiraan/{kode_wilayah}.
+# ----------------------------------------------------------
+@app.get("/api/bmkg/prakiraan/{kode_wilayah}")
+@app.get("/api/prakiraan/{kode_wilayah}")
+def get_prakiraan(kode_wilayah: str):
+    """Return BMKG weather forecasts for a kelurahan by kode_wilayah."""
+    query = text(
+        """
+        SELECT
+            pb.id,
+            pb.kelurahan_id,
+            k.nama_kelurahan,
+            pb.kondisi_cuaca,
+            pb.suhu_celcius,
+            pb.kelembapan_persen,
+            pb.kecepatan_angin_kmh,
+            pb.arah_angin,
+            pb.waktu_prakiraan
+        FROM public.prakiraan_bmkg pb
+        JOIN public.kelurahan k ON k.id = pb.kelurahan_id
+        WHERE k.kode_wilayah = :kode_wilayah
+          AND pb.waktu_prakiraan >= LOCALTIMESTAMP
+        ORDER BY pb.waktu_prakiraan
+        LIMIT 20
+        """
+    )
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(query, {"kode_wilayah": kode_wilayah}).mappings().all()
+        prakiraan = [dict(r) for r in rows]
+        return {"prakiraan": prakiraan}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Gagal mengambil prakiraan BMKG: {str(exc)}",
+        ) from exc
+
+
+# ==========================================================
+# 9. TIDE / PASANG-SURUT DATA — REQUIRED BY FRONTEND
+# ==========================================================
+# TideMonitorWidget.jsx fetches /api/maritim/pasut
+# ----------------------------------------------------------
+@app.get("/api/maritim/pasut")
+async def get_pasut():
+    """
+    Proxy tidal data from Open-Meteo Marine API for Makassar Strait.
+    Returns sea-level and wave data so the frontend TideMonitorWidget
+    can display current conditions.  Falls back to an empty response
+    if the external API is unreachable.
+    """
+    # Makassar Strait approximate coordinates
+    lat, lon = -5.15, 119.43
+    url = (
+        f"https://marine-api.open-meteo.com/v1/marine"
+        f"?latitude={lat}&longitude={lon}"
+        f"&current=wave_height,wave_period,wave_direction"
+        f"&hourly=wave_height,wave_period,wave_direction"
+        f"&timezone=Asia%2FMakassar"
+        f"&forecast_days=1"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200:
+            return {"status": "error", "message": f"Open-Meteo HTTP {resp.status_code}", "data": []}
+        data = resp.json()
+        return {"status": "ok", "data": data}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc), "data": []}
+
+
+# ==========================================================
+# 10. SYNC STATUS
+# ==========================================================
+@app.get("/api/sync-status")
+def get_sync_status():
+    """Return the status of the last rain/flood sync run."""
+    return last_sync_info
+
+
+# ==========================================================
+# 7. FLOOD RISK DATA (potensi_banjir) — REQUIRED BY FRONTEND
+# ==========================================================
+# The frontend (App.jsx) fetches /api/banjir on mount and uses
+# it to colour every kelurahan polygon and populate risk counts.
+# ----------------------------------------------------------
+@app.get("/api/banjir")
+def get_banjir():
+    """Return the latest flood-risk row for every kelurahan."""
+    query = text(
+        """
+        SELECT
+            pb.kelurahan_id,
+            k.nama_kelurahan,
+            k.kode_wilayah,
+            pb.tingkat,
+            pb.hujan_mm,
+            pb.elevasi_m,
+            pb.indeks_kerawanan,
+            pb.estimasi_kedalaman_cm,
+            pb.kondisi_bmkg,
+            pb.waktu_analisis,
+            pb.metode,
+            pb.sumber_model
+        FROM public.potensi_banjir pb
+        JOIN public.kelurahan k ON k.id = pb.kelurahan_id
+        ORDER BY k.nama_kelurahan
+        """
+    )
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(query).mappings().all()
+        return [dict(r) for r in rows]
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Gagal mengambil data potensi banjir: {str(exc)}",
+        ) from exc
+
+
+# ==========================================================
+# 8. BMKG WEATHER FORECAST — REQUIRED BY FRONTEND
+# ==========================================================
+# The frontend tries /api/bmkg/prakiraan/{kode_wilayah} first,
+# then falls back to /api/prakiraan/{kode_wilayah}.
+# ----------------------------------------------------------
+@app.get("/api/bmkg/prakiraan/{kode_wilayah}")
+@app.get("/api/prakiraan/{kode_wilayah}")
+def get_prakiraan(kode_wilayah: str):
+    """Return BMKG weather forecasts for a kelurahan by kode_wilayah."""
+    query = text(
+        """
+        SELECT
+            pb.id,
+            pb.kelurahan_id,
+            k.nama_kelurahan,
+            pb.kondisi_cuaca,
+            pb.suhu_celcius,
+            pb.kelembapan_persen,
+            pb.kecepatan_angin_kmh,
+            pb.arah_angin,
+            pb.waktu_prakiraan
+        FROM public.prakiraan_bmkg pb
+        JOIN public.kelurahan k ON k.id = pb.kelurahan_id
+        WHERE k.kode_wilayah = :kode_wilayah
+          AND pb.waktu_prakiraan >= LOCALTIMESTAMP
+        ORDER BY pb.waktu_prakiraan
+        LIMIT 20
+        """
+    )
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(query, {"kode_wilayah": kode_wilayah}).mappings().all()
+        prakiraan = [dict(r) for r in rows]
+        return {"prakiraan": prakiraan}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Gagal mengambil prakiraan BMKG: {str(exc)}",
+        ) from exc
+
+
+# ==========================================================
+# 9. TIDE / PASANG-SURUT DATA — REQUIRED BY FRONTEND
+# ==========================================================
+# TideMonitorWidget.jsx fetches /api/maritim/pasut
+# ----------------------------------------------------------
+@app.get("/api/maritim/pasut")
+async def get_pasut():
+    """
+    Proxy tidal data from Open-Meteo Marine API for Makassar Strait.
+    Returns sea-level and wave data so the frontend TideMonitorWidget
+    can display current conditions.  Falls back to an empty response
+    if the external API is unreachable.
+    """
+    # Makassar Strait approximate coordinates
+    lat, lon = -5.15, 119.43
+    url = (
+        f"https://marine-api.open-meteo.com/v1/marine"
+        f"?latitude={lat}&longitude={lon}"
+        f"&current=wave_height,wave_period,wave_direction"
+        f"&hourly=wave_height,wave_period,wave_direction"
+        f"&timezone=Asia%2FMakassar"
+        f"&forecast_days=1"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200:
+            return {"status": "error", "message": f"Open-Meteo HTTP {resp.status_code}", "data": []}
+        data = resp.json()
+        return {"status": "ok", "data": data}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc), "data": []}
+
+
+# ==========================================================
+# 10. SYNC STATUS
+# ==========================================================
+@app.get("/api/sync-status")
+def get_sync_status():
+    """Return the status of the last rain/flood sync run."""
+    return last_sync_info
+
