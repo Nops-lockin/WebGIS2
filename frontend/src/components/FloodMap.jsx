@@ -204,7 +204,7 @@ function SelectedFocus({ feature }) {
       if (bounds.isValid()) {
         map.fitBounds(bounds, { maxZoom: 15, padding: [60, 60], duration: 1.2 });
       }
-    } catch (_) {}
+    } catch (_) { }
   }, [feature, map]);
   return null;
 }
@@ -215,7 +215,7 @@ function UserLocationFocus({ location }) {
     if (!location) return;
     try {
       map.flyTo(location, 14, { duration: 1.2 });
-    } catch (_) {}
+    } catch (_) { }
   }, [location, map]);
   return null;
 }
@@ -478,10 +478,10 @@ export default function FloodMap({
             simTingkat === "sangat_tinggi"
               ? "Bahaya Ekstrem (Simulasi)"
               : simTingkat === "tinggi"
-              ? "Siaga Banjir (Simulasi)"
-              : simTingkat === "sedang"
-              ? "Waspada (Simulasi)"
-              : "Aman (Simulasi)",
+                ? "Siaga Banjir (Simulasi)"
+                : simTingkat === "sedang"
+                  ? "Waspada (Simulasi)"
+                  : "Aman (Simulasi)",
           elevasi: elev,
           hujan: simRain,
           estimasiKedalamanCm: simulatedDepth,
@@ -574,7 +574,7 @@ export default function FloodMap({
           try {
             layer.closeTooltip();
             layer.unbindTooltip();
-          } catch (_) {}
+          } catch (_) { }
           onSelectKelurahan({
             ...props,
             feature,
