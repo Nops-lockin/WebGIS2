@@ -23,7 +23,7 @@ export default function MobileDrawerModal({
             onClick={onClose}
             aria-label="Tutup jendela"
           >
-            <IconClose size={20} color="#172B3A" />
+            <IconClose size={20} color="#F8FAFC" />
           </button>
         </div>
 

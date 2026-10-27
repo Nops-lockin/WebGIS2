@@ -23,7 +23,7 @@ export default function DataSourceInfo() {
             <div className="source-badge">Prakiraan Cuaca</div>
             <strong className="source-title">BMKG (Badan Meteorologi, Klimatologi, dan Geofisika)</strong>
             <p className="source-desc">
-              Data prakiraan cuaca numerik 3-harian (suhu, kelembapan, kondisi langit, potensi hujan) yang disinkronkan
+              Data prakiraan cuaca numerik BMKG (suhu, kelembapan, kondisi langit, potensi hujan) yang disinkronkan
               melalui API resmi BMKG untuk seluruh kecamatan dan kelurahan di Kota Makassar.
             </p>
             <span className="source-type-tag">Tipe: Prakiraan Numerik (Forecast)</span>

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import AppHeader from "./components/AppHeader";
-import IntroSection from "./components/IntroSection";
+import JeneBosiLogo from "./components/JeneBosiLogo";
+import DockedSidebar from "./components/DockedSidebar";
+import SidebarFeatureDrawer from "./components/SidebarFeatureDrawer";
 import FloodMap from "./components/FloodMap";
 import SelectedAreaPanel, { getRiskBadge } from "./components/SelectedAreaPanel";
 import FloodDepthSimulator from "./components/FloodDepthSimulator";
@@ -13,9 +15,10 @@ import TideMonitorWidget from "./components/TideMonitorWidget";
 import SimulationController from "./components/SimulationController";
 import CitizenSafetyGuide from "./components/CitizenSafetyGuide";
 import WaterHeightSimulatorModal from "./components/WaterHeightSimulatorModal";
+import RiverBufferTool from "./components/RiverBufferTool";
 import { generateJalurEvakuasi } from "./utils/evacuationRouting";
-import { POSKO_EVAKUASI_MAKASSAR } from "./data/evakuasiDanKanal";
-import { KATEGORI_FASILITAS } from "./data/fasilitasKritis";
+import { POSKO_EVAKUASI_MAKASSAR, KANAL_DAN_SUNGAI_MAKASSAR } from "./data/evakuasiDanKanal";
+import { KATEGORI_FASILITAS, DAFTAR_FASILITAS_KRITIS } from "./data/fasilitasKritis";
 import {
   IconShield,
   IconSearch,
@@ -53,6 +56,23 @@ function normalisasiPrakiraan(dataApi) {
 }
 
 export default function App() {
+  // Tema: "dark" | "light"
+  const [theme, setTheme] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("jenebosi_theme") || "dark";
+    }
+    return "dark";
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("jenebosi_theme", theme);
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((curr) => (curr === "dark" ? "light" : "dark"));
+  }, []);
+
   // Mode Tampilan: "laptop" | "mobile"
   const [viewMode, setViewMode] = useState(() => {
     if (typeof window !== "undefined") {
@@ -98,9 +118,15 @@ export default function App() {
   // FITUR 4: RADIUS BAHAYA LUAPAN KANAL (BUFFER ZONE)
   const [activeBufferRiver, setActiveBufferRiver] = useState("kanal-panampu");
   const [bufferRadius, setBufferRadius] = useState(250);
+  const [bufferToolOpen, setBufferToolOpen] = useState(false);
 
   // FITUR 6: FASILITAS KRITIS RADAR
   const [facilityCategory, setFacilityCategory] = useState("semua");
+  const [focusedPosko, setFocusedPosko] = useState(null);
+
+  // STATE BARU: DOCKED SIDEBAR LAYOUT SEPERTI REFERENSI GAMBAR
+  const [activeSidebarMenu, setActiveSidebarMenu] = useState(null); // null | "ikhtisar" | "layer_kerawanan" | "posko" | "fasilitas" | "kanal_buffer" | "cuaca" | "pasut" | "simulasi" | "simulator_air" | "panduan" | "tentang"
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true); // Default ringkas icon-only
 
   // State Modal Drawer untuk Mode HP
   const [mobileModalActive, setMobileModalActive] = useState(null); // null | "simulasi_kedalaman" | "panduan" | "cuaca" | "pasut" | "tentang" | "simulasi_pengujian" | "buffer"
@@ -297,9 +323,10 @@ export default function App() {
     return counts;
   }, [banjir, isSimulation, simulationState, geojson]);
 
-  // Handler memilih kelurahan dari dropdown / search
+  // Handler memilih kelurahan dari dropdown / search / klik polygon
   const handleSelectKelurahan = useCallback(
     (item) => {
+      setActiveSidebarMenu(null); // Otomatis tutup drawer menu samping saat kelurahan dipilih agar fokus ke peta
       const feat = geojson?.features.find((f) => f.properties.id === item.id);
       const b = banjir.find((x) => x.kelurahan_id === item.id || x.nama_kelurahan === item.nama_kelurahan);
       const lowerName = String(item.nama_kelurahan || "").toLowerCase();
@@ -327,6 +354,7 @@ export default function App() {
         waktu_analisis: isSimulation ? new Date().toISOString() : (b?.waktu_analisis ?? null),
         feature: feat,
       });
+      setActiveSidebarMenu(null); // Otomatis tutup drawer fitur agar tidak tumpang tindih
     },
     [geojson, banjir, isSimulation, simulationState]
   );
@@ -434,7 +462,7 @@ export default function App() {
           <div className="mobile-bar-main">
             <div className="mobile-brand">
               <div className="mobile-brand-icon">
-                <IconShield size={16} color="#FFFFFF" />
+                <JeneBosiLogo size={24} />
               </div>
               <strong className="mobile-brand-title">JeneBosi <span>(JB)</span></strong>
             </div>
@@ -480,6 +508,16 @@ export default function App() {
               )}
             </div>
 
+            {/* Theme Toggle Mobile */}
+            <button
+              type="button"
+              className="mode-toggle-chip"
+              onClick={toggleTheme}
+              title={theme === "dark" ? "Ganti ke Tema Terang" : "Ganti ke Tema Gelap"}
+            >
+              <span>{theme === "dark" ? "🌙" : "☀️"}</span>
+            </button>
+
             {/* Tombol Beralih ke Mode Laptop */}
             <button
               type="button"
@@ -487,7 +525,7 @@ export default function App() {
               onClick={() => setViewMode("laptop")}
               title="Beralih ke Tampilan Laptop"
             >
-              <IconLaptop size={14} color="#176B65" />
+              <IconLaptop size={14} color="var(--brand-primary)" />
               <span>Laptop</span>
             </button>
           </div>
@@ -534,24 +572,10 @@ export default function App() {
 
             <button
               type="button"
-              className="mobile-chip chip-feature"
-              onClick={() => setWaterSimulatorOpen(true)}
-            >
-              📏 Simulator Air
-            </button>
-            <button
-              type="button"
               className={`mobile-chip chip-scenario ${isSimulation ? "active-scenario" : ""}`}
               onClick={() => setSimulationModalOpen(true)}
             >
               🧪 {isSimulation ? "Skenario Aktif" : "Simulasi"}
-            </button>
-            <button
-              type="button"
-              className={`mobile-chip chip-feature ${bufferToolOpen ? "active-scenario" : ""}`}
-              onClick={() => setBufferToolOpen((open) => !open)}
-            >
-              🎯 {bufferToolOpen ? "Tutup Sempadan" : "Zona Sungai"}
             </button>
             <button
               type="button"
@@ -566,6 +590,13 @@ export default function App() {
               onClick={() => setMobileModalActive("cuaca")}
             >
               🌤️ Cuaca BMKG
+            </button>
+            <button
+              type="button"
+              className="mobile-chip chip-feature"
+              onClick={() => setMobileModalActive("posko")}
+            >
+              ⛺ Posko Evakuasi ({POSKO_EVAKUASI_MAKASSAR.length})
             </button>
             <button
               type="button"
@@ -624,15 +655,18 @@ export default function App() {
             bufferRadius={bufferRadius}
             onChangeBufferRiver={setActiveBufferRiver}
             onChangeBufferRadius={setBufferRadius}
+            bufferToolOpen={bufferToolOpen}
+            onToggleBufferTool={() => setBufferToolOpen((p) => !p)}
             // FACILITY PROPS
             facilityCategory={facilityCategory}
             onChangeFacilityCategory={setFacilityCategory}
             publicMode
+            focusedPosko={focusedPosko}
           />
         </div>
 
         {/* Interactive Bottom Sheet saat Kelurahan Dipilih */}
-        {selectedKelurahan ? (
+        {selectedKelurahan && (
           <MobileBottomSheet
             selected={selectedKelurahan}
             onClose={() => setSelectedKelurahan(null)}
@@ -644,34 +678,71 @@ export default function App() {
             onShowRoute={handleShowRoute}
             badge={badge}
           />
-        ) : (
-          !activeRoute &&
-          !bufferToolOpen && (
-            <div className="mobile-bottom-prompt">
-              <div className="mobile-prompt-row">
-                <IconCompass size={15} color="#176B65" />
-                <span>Pilih kelurahan di peta atau pilihan cepat:</span>
-              </div>
-              <div className="mobile-quick-pills">
-                {["Antang", "Manggala", "Tamalanrea", "Panakkukang", "Mariso"].map((nama) => (
-                  <button
-                    key={`m-quick-${nama}`}
-                    type="button"
-                    className="mobile-quick-pill-btn"
-                    onClick={() => {
-                      const found = daftarKelurahan.find(
-                        (k) => k.nama_kelurahan.toLowerCase() === nama.toLowerCase()
-                      );
-                      if (found) handleSelectKelurahan(found);
-                    }}
-                  >
-                    {nama}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )
         )}
+
+        {/* Modal Drawer Posko Evakuasi di HP */}
+        <MobileDrawerModal
+          isOpen={mobileModalActive === "posko"}
+          onClose={() => setMobileModalActive(null)}
+          title="Posko & Titik Evakuasi Resmi"
+        >
+          <div className="drawer-panel-inner" style={{ padding: "6px 0" }}>
+            <p className="drawer-intro-text">
+              Daftar <strong>{POSKO_EVAKUASI_MAKASSAR.length} Posko Resmi</strong> dan fasilitas evakuasi warga. Ketuk untuk langsung fokus dan zoom ke titik posko di peta:
+            </p>
+            <div className="drawer-items-scroll">
+              {POSKO_EVAKUASI_MAKASSAR.map((p) => (
+                <div
+                  key={`m-posko-${p.id}`}
+                  className="drawer-card-item clickable-posko-card"
+                  onClick={() => {
+                    setFocusedPosko(p);
+                    setMobileModalActive(null);
+                  }}
+                  title="Ketuk untuk melihat langsung di peta"
+                >
+                  <div className="drawer-card-title-row">
+                    <strong>{p.nama}</strong>
+                    <span className="drawer-chip-badge">{p.kategori}</span>
+                  </div>
+                  <span className="drawer-card-sub">📍 {p.alamat} (Kec. {p.kecamatan})</span>
+                  <div className="drawer-card-meta">
+                    <span>Kapasitas: ±{p.kapasitas} Jiwa</span>
+                    <span>Kontak: {p.kontak}</span>
+                  </div>
+                  <div className="drawer-card-btn-row">
+                    <button
+                      type="button"
+                      className="drawer-action-btn primary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFocusedPosko(p);
+                        setMobileModalActive(null);
+                      }}
+                    >
+                      📍 Fokus ke Posko di Peta
+                    </button>
+                    <button
+                      type="button"
+                      className="drawer-action-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (selectedKelurahan) {
+                          handleShowRoute(selectedKelurahan, p);
+                        } else {
+                          handleShowRoute(daftarKelurahan[0], p);
+                        }
+                        setMobileModalActive(null);
+                      }}
+                    >
+                      🗺️ Rute
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </MobileDrawerModal>
 
         {/* Modal Drawer Fitur Pendukung di HP */}
         <MobileDrawerModal
@@ -688,57 +759,39 @@ export default function App() {
           title="Filter Fasilitas Kritis Kota Makassar"
         >
           <div className="mobile-facility-list" style={{ padding: "8px 0" }}>
-            <p style={{ fontSize: "13px", color: "#64748B", marginBottom: "12px" }}>
+            <p className="drawer-intro-text">
               Pilih kategori fasilitas yang ingin ditampilkan pada peta:
             </p>
             {KATEGORI_FASILITAS.map((kat) => (
               <button
                 key={kat.id}
                 type="button"
+                className={`drawer-option-btn ${facilityCategory === kat.id ? "active" : ""}`}
                 onClick={() => {
                   setFacilityCategory(kat.id);
                   setMobileModalActive(null);
                 }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  width: "100%",
-                  padding: "12px 14px",
-                  marginBottom: "8px",
-                  border: facilityCategory === kat.id ? "2px solid #176B65" : "1px solid #E2E8F0",
-                  borderRadius: "10px",
-                  background: facilityCategory === kat.id ? "#F0FDF4" : "#FFFFFF",
-                  fontWeight: facilityCategory === kat.id ? "600" : "400",
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
+                style={{ marginBottom: "8px" }}
               >
                 <span>{kat.icon} {kat.label}</span>
-                {facilityCategory === kat.id && <span style={{ color: "#176B65" }}>✓ Aktif</span>}
+                {facilityCategory === kat.id && <span>✓ Aktif</span>}
               </button>
             ))}
             <button
               type="button"
+              className={`drawer-option-btn ${facilityCategory === "none" ? "active" : ""}`}
               onClick={() => {
                 setFacilityCategory("none");
                 setMobileModalActive(null);
               }}
               style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                width: "100%",
-                padding: "12px 14px",
-                border: facilityCategory === "none" ? "2px solid #DC2626" : "1px solid #E2E8F0",
-                borderRadius: "10px",
-                background: facilityCategory === "none" ? "#FEF2F2" : "#FFFFFF",
-                cursor: "pointer",
-                textAlign: "left",
+                marginTop: "4px",
+                borderColor: facilityCategory === "none" ? "#EF4444" : "rgba(255, 255, 255, 0.12)",
+                color: facilityCategory === "none" ? "#EF4444" : "inherit"
               }}
             >
               <span>🚫 Sembunyikan Semua Fasilitas</span>
-              {facilityCategory === "none" && <span style={{ color: "#DC2626" }}>✓ Tersembunyi</span>}
+              {facilityCategory === "none" && <span>✓ Tersembunyi</span>}
             </button>
           </div>
         </MobileDrawerModal>
@@ -825,11 +878,12 @@ export default function App() {
   }
 
   // =========================================================================
-  // RENDER 2: MODE LAPTOP / DESKTOP (WIDE 2-COLUMN EXPERIENCE)
+  // RENDER 2: MODE LAPTOP / DESKTOP (FULL MAP-FIRST CARTOGRAPHIC DASHBOARD)
+  // Layout mengikuti referensi gambar: Fullscreen Map + Floating Header + Docked Sidebar Navigasi
   // =========================================================================
   return (
-    <div className="webgis-app-root map-first-app">
-      {/* 1. HEADER DENGAN TOMBOL MODE SIMULASI & MODE HP */}
+    <div className="webgis-app-root full-screen-dashboard">
+      {/* 1. FLOATING TOP HEADER DENGAN SEARCH & FILTER PILLS */}
       <AppHeader
         search={search}
         onSearchChange={setSearch}
@@ -837,155 +891,316 @@ export default function App() {
         onSelectKelurahan={handleSelectKelurahan}
         viewMode={viewMode}
         onToggleMode={() => setViewMode("mobile")}
-        onOpenWaterSimulator={() => setWaterSimulatorOpen(true)}
-        onOpenSimulation={() => setSimulationModalOpen(true)}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        filter={filter}
+        onFilterChange={setFilter}
+        summary={summary}
       />
 
-      {/* 2. SECTION INTRODUKSI */}
-      <IntroSection summary={summary} />
+      {/* 2. DOCKED SIDEBAR DI KIRI (Vertikal Icon Navigasi persis seperti Gambar Referensi) */}
+      <DockedSidebar
+        activeMenu={activeSidebarMenu}
+        onSelectMenu={(menuId) => {
+          setActiveSidebarMenu((current) => {
+            const next = current === menuId ? null : menuId;
+            if (next) {
+              setSelectedKelurahan(null); // Otomatis tutup panel detail kelurahan agar tidak tumpang tindih
+            }
+            return next;
+          });
+        }}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed((c) => !c)}
+      />
 
-      {/* 3. WORKSPACE PETA UTAMA */}
-      <section className="main-map-workspace">
-        <div className="workspace-container">
-          {error && (
-            <div className="error-banner-alert" role="alert">
-              <span>⚠️ {error}</span>
+      {/* 3. SIDEBAR FEATURE DRAWER (Panel Samping yang Muncul Ketika Icon Menu Dipilih) */}
+      <SidebarFeatureDrawer
+        activeMenu={activeSidebarMenu}
+        onClose={() => setActiveSidebarMenu(null)}
+        title={
+          activeSidebarMenu === "ikhtisar" ? "📊 Ringkasan Risiko Kota Makassar" :
+          activeSidebarMenu === "layer_kerawanan" ? "⚠️ Filter Layer Kerawanan" :
+          activeSidebarMenu === "posko" ? "⛺ Posko & Titik Pengungsian" :
+          activeSidebarMenu === "fasilitas" ? "🏢 Fasilitas Kritis Makassar" :
+          activeSidebarMenu === "kanal_buffer" ? "🌊 Kanal & Sempadan Luapan" :
+          activeSidebarMenu === "cuaca" ? "🌤️ Dinamika Prakiraan Cuaca BMKG" :
+          activeSidebarMenu === "pasut" ? "🚢 Pasang Surut Laut (Stasiun Paotere)" :
+          activeSidebarMenu === "simulasi" ? "🧪 Mode Simulasi Bencana Banjir" :
+          activeSidebarMenu === "simulator_air" ? "📏 Simulator Ketinggian Genangan Air" :
+          activeSidebarMenu === "panduan" ? "📋 Panduan Kesiapsiagaan & 112" :
+          activeSidebarMenu === "tentang" ? "ℹ️ Tentang Data & Metodologi" : "Menu"
+        }
+      >
+        {activeSidebarMenu === "ikhtisar" && (
+          <div className="drawer-panel-inner">
+            <p className="drawer-intro-text">
+              Pantauan geospasial kerawanan banjir dari <strong>153 kelurahan</strong> di Kota Makassar.
+            </p>
+            <div className="drawer-stats-grid">
+              <div className="drawer-stat-card border-green">
+                <span>Aman</span>
+                <strong>{summary.rendah}</strong>
+              </div>
+              <div className="drawer-stat-card border-amber">
+                <span>Waspada</span>
+                <strong>{summary.sedang}</strong>
+              </div>
+              <div className="drawer-stat-card border-orange">
+                <span>Siaga</span>
+                <strong>{summary.tinggi}</strong>
+              </div>
+              <div className="drawer-stat-card border-red">
+                <span>Bahaya</span>
+                <strong>{summary.sangat_tinggi}</strong>
+              </div>
             </div>
-          )}
 
-          <div className="workspace-columns-layout">
-            {/* Kolom 1: Peta Interaktif Leaflet */}
-            <div className="workspace-map-col">
-              <FloodMap
-                geojson={geojson}
-                banjirData={banjir}
-                selectedKelurahan={selectedKelurahan}
-                onSelectKelurahan={setSelectedKelurahan}
-                search={search}
-                onSearchChange={setSearch}
-                filter={filter}
-                onFilterChange={setFilter}
-                summary={summary}
-                // SIMULATION PROPS
-                isSimulation={isSimulation}
-                simulationState={simulationState}
-                onOpenSimulation={() => setSimulationModalOpen(true)}
-                onResetSimulation={handleResetSimulation}
-                // ROUTE PROPS
-                activeRoute={activeRoute}
-                onClearRoute={() => setActiveRoute(null)}
-                onStartRouteToFacility={handleStartRouteToFacility}
-                // BUFFER PROPS
-                activeBufferRiver={activeBufferRiver}
-                bufferRadius={bufferRadius}
-                onChangeBufferRiver={setActiveBufferRiver}
-                onChangeBufferRadius={setBufferRadius}
-                bufferToolOpen={bufferToolOpen}
-                onToggleBufferTool={() => setBufferToolOpen((p) => !p)}
-                // FACILITY PROPS
-                facilityCategory={facilityCategory}
-                onChangeFacilityCategory={setFacilityCategory}
-                publicMode
-              />
-            </div>
-
-            {/* Kolom 2: Panel Detail Wilayah Terpilih */}
-            <div className="workspace-panel-col">
-              {selectedKelurahan ? (
-                <SelectedAreaPanel
-                  selected={selectedKelurahan}
-                  onClose={() => setSelectedKelurahan(null)}
-                  prakiraan={prakiraan}
-                  loadingPrakiraan={loadingPrakiraan}
-                  errorPrakiraan={errorPrakiraan}
-                  onRefreshPrakiraan={handleRefreshPrakiraan}
-                  onShowRoute={handleShowRoute}
-                  isSimulation={isSimulation}
-                  simulationState={simulationState}
-                />
-              ) : (
-                /* Card Panduan Awal Ketika Belum Ada Wilayah Terpilih */
-                <div className="empty-selection-card">
-                  <div className="empty-icon-badge">
-                    <IconCompass size={32} color="#176B65" />
-                  </div>
-                  <h3 className="empty-title">Pilih Kelurahan di Peta</h3>
-                  <p className="empty-desc">
-                    Klik pada salah satu polygon dari <strong>153 kelurahan</strong> di peta untuk melihat profil risiko
-                    banjir, prakiraan cuaca BMKG, serta jalur evakuasi aman.
-                  </p>
-
-                  <div className="empty-quick-links">
-                    <span className="quick-links-label">Pilihan Cepat Wilayah:</span>
-                    <div className="quick-tags-wrap">
-                      {["Antang", "Manggala", "Tamalanrea", "Panakkukang", "Mariso"].map((nama) => (
-                        <button
-                          key={`quick-${nama}`}
-                          type="button"
-                          className="quick-kel-btn"
-                          onClick={() => {
-                            const found = daftarKelurahan.find(
-                              (k) => k.nama_kelurahan.toLowerCase() === nama.toLowerCase()
-                            );
-                            if (found) handleSelectKelurahan(found);
-                          }}
-                        >
-                          {nama}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="empty-educational-hint">
-                    <IconInfo size={15} color="#64748B" />
-                    <span>
-                      Pilih wilayah untuk melihat status, prakiraan cuaca, posko, dan rute evakuasi.
-                    </span>
-                  </div>
-                </div>
-              )}
+            <h4 className="drawer-section-heading">Pilihan Cepat Kelurahan:</h4>
+            <div className="drawer-quick-pills">
+              {["Antang", "Manggala", "Tamalanrea", "Panakkukang", "Mariso", "Buloa", "Tallo"].map((nama) => (
+                <button
+                  key={`drawer-p-${nama}`}
+                  type="button"
+                  className="drawer-pill-btn"
+                  onClick={() => {
+                    const found = daftarKelurahan.find((k) => k.nama_kelurahan.toLowerCase() === nama.toLowerCase());
+                    if (found) {
+                      handleSelectKelurahan(found);
+                      setActiveSidebarMenu(null); // Tutup drawer agar user melihat peta
+                    }
+                  }}
+                >
+                  {nama}
+                </button>
+              ))}
             </div>
           </div>
-        </div>
-      </section>
+        )}
 
-      <CitizenSafetyGuide />
+        {activeSidebarMenu === "posko" && (
+          <div className="drawer-panel-inner">
+            <p className="drawer-intro-text">
+              Daftar <strong>{POSKO_EVAKUASI_MAKASSAR.length} Posko Resmi</strong> dan fasilitas evakuasi warga. Klik untuk fokus langsung ke titik posko di peta:
+            </p>
+            <div className="drawer-items-scroll">
+              {POSKO_EVAKUASI_MAKASSAR.map((p) => (
+                <div
+                  key={p.id}
+                  className="drawer-card-item clickable-posko-card"
+                  onClick={() => {
+                    setFocusedPosko(p);
+                    setActiveSidebarMenu(null); // Tutup drawer langsung ke peta dan zoom ke posko
+                  }}
+                  title="Klik untuk melihat langsung di peta"
+                >
+                  <div className="drawer-card-title-row">
+                    <strong>{p.nama}</strong>
+                    <span className="drawer-chip-badge">{p.kategori}</span>
+                  </div>
+                  <span className="drawer-card-sub">📍 {p.alamat} (Kec. {p.kecamatan})</span>
+                  <div className="drawer-card-meta">
+                    <span>Kapasitas: ±{p.kapasitas} Jiwa</span>
+                    <span>Kontak: {p.kontak}</span>
+                  </div>
+                  <div className="drawer-card-btn-row">
+                    <button
+                      type="button"
+                      className="drawer-action-btn primary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFocusedPosko(p);
+                        setActiveSidebarMenu(null);
+                      }}
+                    >
+                      📍 Fokus ke Posko di Peta
+                    </button>
+                    <button
+                      type="button"
+                      className="drawer-action-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (selectedKelurahan) {
+                          handleShowRoute(selectedKelurahan, p);
+                        } else {
+                          handleShowRoute(daftarKelurahan[0], p);
+                        }
+                        setActiveSidebarMenu(null);
+                      }}
+                    >
+                      🗺️ Buat Rute Evakuasi
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
-      {/* 4. PRAKIRAAN CUACA & DINAMIKA HUJAN BMKG */}
-      <RainfallInsight
-        prakiraanList={prakiraan}
-        selectedKelurahan={selectedKelurahan}
-        hujanTerbaru={0}
-      />
+        {activeSidebarMenu === "fasilitas" && (
+          <div className="drawer-panel-inner">
+            <p className="drawer-intro-text">Pilih kategori fasilitas publik yang ditampilkan di peta:</p>
+            <div className="drawer-options-list">
+              {KATEGORI_FASILITAS.map((kat) => (
+                <button
+                  key={kat.id}
+                  type="button"
+                  className={`drawer-option-btn ${facilityCategory === kat.id ? "active" : ""}`}
+                  onClick={() => setFacilityCategory(kat.id)}
+                >
+                  <span>{kat.icon} {kat.label}</span>
+                  {facilityCategory === kat.id && <span>✓</span>}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`drawer-option-btn ${facilityCategory === "none" ? "active" : ""}`}
+                onClick={() => setFacilityCategory("none")}
+              >
+                <span>🚫 Sembunyikan Fasilitas</span>
+                {facilityCategory === "none" && <span>✓</span>}
+              </button>
+            </div>
+          </div>
+        )}
 
-      {/* FITUR 4: MONITOR PASANG-SURUT AIR LAUT (ROB) SELAT MAKASSAR */}
-      <section className="tide-section-wrapper" style={{ padding: "0 0 32px 0" }}>
-        <div className="section-container">
-          <TideMonitorWidget
-            onFilterCoastal={() => {
-              setSearch("Mariso");
-              window.scrollTo({ top: 0, behavior: "smooth" });
+        {activeSidebarMenu === "cuaca" && (
+          <div className="drawer-panel-inner">
+            <RainfallInsight
+              prakiraanList={prakiraan}
+              selectedKelurahan={selectedKelurahan}
+              hujanTerbaru={0}
+            />
+          </div>
+        )}
+
+        {activeSidebarMenu === "pasut" && (
+          <div className="drawer-panel-inner">
+            <TideMonitorWidget
+              onFilterCoastal={() => {
+                setSearch("Mariso");
+                setActiveSidebarMenu(null);
+              }}
+            />
+          </div>
+        )}
+
+        {activeSidebarMenu === "simulasi" && (
+          <div className="drawer-panel-inner">
+            <p className="drawer-intro-text">
+              Uji ketahanan wilayah Kota Makassar dengan skenario hujan lebat dan pasang air laut kustom:
+            </p>
+            <button
+              type="button"
+              className="drawer-action-btn primary"
+              onClick={() => {
+                setSimulationModalOpen(true);
+                setActiveSidebarMenu(null);
+              }}
+            >
+              ⚙️ Buka Pengendali Simulasi
+            </button>
+            {isSimulation && (
+              <button
+                type="button"
+                className="drawer-action-btn danger"
+                style={{ marginTop: 8 }}
+                onClick={handleResetSimulation}
+              >
+                ✕ Matikan Simulasi (Kembali ke Real-Time)
+              </button>
+            )}
+          </div>
+        )}
+
+        {activeSidebarMenu === "panduan" && (
+          <div className="drawer-panel-inner">
+            <CitizenSafetyGuide />
+            <div style={{ marginTop: 16 }}>
+              <PreparednessChecklist />
+            </div>
+          </div>
+        )}
+
+        {activeSidebarMenu === "tentang" && (
+          <div className="drawer-panel-inner">
+            <DataSourceInfo />
+          </div>
+        )}
+      </SidebarFeatureDrawer>
+
+      {/* 4. AREA PETA LEAFLET FULLSCREEN (FOKUS UTAMA) */}
+      <main className="fullscreen-map-canvas">
+        <FloodMap
+          geojson={geojson}
+          banjirData={banjir}
+          selectedKelurahan={selectedKelurahan}
+          onSelectKelurahan={(kel) => {
+            setSelectedKelurahan(kel);
+            if (kel) {
+              setActiveSidebarMenu(null); // Otomatis tutup drawer aktif saat poligon kelurahan di peta diklik
+            }
+          }}
+          search={search}
+          onSearchChange={setSearch}
+          filter={filter}
+          onFilterChange={setFilter}
+          summary={summary}
+          // SIMULATION PROPS
+          isSimulation={isSimulation}
+          simulationState={simulationState}
+          onOpenSimulation={() => setSimulationModalOpen(true)}
+          onResetSimulation={handleResetSimulation}
+          // ROUTE PROPS
+          activeRoute={activeRoute}
+          onClearRoute={() => setActiveRoute(null)}
+          onStartRouteToFacility={handleStartRouteToFacility}
+          // BUFFER PROPS
+          activeBufferRiver={activeBufferRiver}
+          bufferRadius={bufferRadius}
+          onChangeBufferRiver={setActiveBufferRiver}
+          onChangeBufferRadius={setBufferRadius}
+          bufferToolOpen={bufferToolOpen || activeSidebarMenu === "kanal_buffer"}
+          onToggleBufferTool={() => setBufferToolOpen((p) => !p)}
+          // FACILITY PROPS
+          facilityCategory={facilityCategory}
+          onChangeFacilityCategory={setFacilityCategory}
+          publicMode
+          focusedPosko={focusedPosko}
+        />
+
+        {/* 5. FLOATING POPUP / CONTEXT DRAWER KETIKA KELURAHAN DIPILIH */}
+        {selectedKelurahan && (
+          <div className="floating-selected-overlay">
+            <SelectedAreaPanel
+              selected={selectedKelurahan}
+              onClose={() => setSelectedKelurahan(null)}
+              prakiraan={prakiraan}
+              loadingPrakiraan={loadingPrakiraan}
+              errorPrakiraan={errorPrakiraan}
+              onRefreshPrakiraan={handleRefreshPrakiraan}
+              onShowRoute={handleShowRoute}
+              isSimulation={isSimulation}
+              simulationState={simulationState}
+            />
+          </div>
+        )}
+
+        {/* Floating Quick Action Button di Bawah Peta: "Info Lainnya ↓" persis seperti di Gambar Referensi */}
+        <div className="map-bottom-center-action">
+          <button
+            type="button"
+            className="bottom-info-pill-btn"
+            onClick={() => {
+              setActiveSidebarMenu((curr) => (curr ? null : "ikhtisar"));
             }}
-          />
+          >
+            <span>{activeSidebarMenu ? "Tutup Panel ↑" : "Info Lainnya ↓"}</span>
+          </button>
         </div>
-      </section>
+      </main>
 
-      {/* 6. PANDUAN KESIAPSIAGAAN BANJIR WARGA (CHECKLIST INTERAKTIF) */}
-      <PreparednessChecklist />
-
-      {/* 7. TRANSPARANSI DATA & METODOLOGI ANALISIS */}
-      <DataSourceInfo />
-
-      <WaterHeightSimulatorModal
-        isOpen={waterSimulatorOpen}
-        onClose={() => setWaterSimulatorOpen(false)}
-        selectedKelurahan={selectedKelurahan}
-        onSelectKelurahanQuick={(nama) => {
-          const found = daftarKelurahan.find((k) => k.nama_kelurahan.toLowerCase().includes(nama.toLowerCase()));
-          if (found) handleSelectKelurahan(found);
-        }}
-      />
-
+      {/* Modal Pengendali Simulasi */}
       <SimulationController
         isOpen={simulationModalOpen}
         onClose={() => setSimulationModalOpen(false)}
@@ -996,6 +1211,15 @@ export default function App() {
         onResetRealtime={handleResetSimulation}
       />
 
+      <WaterHeightSimulatorModal
+        isOpen={waterSimulatorOpen}
+        onClose={() => setWaterSimulatorOpen(false)}
+        selectedKelurahan={selectedKelurahan}
+        onSelectKelurahanQuick={(nama) => {
+          const found = daftarKelurahan.find((k) => k.nama_kelurahan.toLowerCase().includes(nama.toLowerCase()));
+          if (found) handleSelectKelurahan(found);
+        }}
+      />
     </div>
   );
 }

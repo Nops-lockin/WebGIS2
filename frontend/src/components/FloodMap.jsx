@@ -32,7 +32,7 @@ import {
   KATEGORI_FASILITAS,
 } from "../data/fasilitasKritis";
 import EvacuationRouteCard from "./EvacuationRouteCard";
-// import RiverBufferTool removed
+import RiverBufferTool from "./RiverBufferTool";
 
 // Fungsi Icon Khusus Posko Evakuasi
 function createPoskoIcon(kategori) {
@@ -112,34 +112,22 @@ L.Icon.Default.mergeOptions({
 });
 
 const BASEMAPS = {
-  standar: {
-    label: "Peta Jalan (Standar)",
-    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  },
-  satelit: {
-    label: "Peta Satelit (Esri)",
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  darkgray: {
+    label: "Esri Dark Gray",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
     overlayUrl:
-      "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+      "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
     attribution:
-      '&copy; <a href="https://www.esri.com/">Esri</a>, Maxar, Earthstar',
-  },
-  topografi: {
-    label: "Peta Topografi",
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
-    attribution:
-      '&copy; <a href="https://www.esri.com/">Esri</a>, HERE, Garmin, USGS',
+      '&copy; <a href="https://www.esri.com/">Esri</a>, HERE, Garmin, &copy; OpenStreetMap contributors',
   },
 };
 
 const RISK_COLORS = {
-  rendah: "#2F855A",
-  sedang: "#D69E2E",
-  tinggi: "#DD6B20",
-  sangat_tinggi: "#C53030",
-  belum: "#94A3B8",
+  rendah: "#10B981",
+  sedang: "#F59E0B",
+  tinggi: "#F97316",
+  sangat_tinggi: "#EF4444",
+  belum: "#64748B",
 };
 
 // Membuat koridor sempadan dalam satuan meter, bukan sekadar memperlebar
@@ -204,7 +192,7 @@ function SelectedFocus({ feature }) {
       if (bounds.isValid()) {
         map.fitBounds(bounds, { maxZoom: 15, padding: [60, 60], duration: 1.2 });
       }
-    } catch (_) { }
+    } catch (_) {}
   }, [feature, map]);
   return null;
 }
@@ -215,8 +203,19 @@ function UserLocationFocus({ location }) {
     if (!location) return;
     try {
       map.flyTo(location, 14, { duration: 1.2 });
-    } catch (_) { }
+    } catch (_) {}
   }, [location, map]);
+  return null;
+}
+
+function PoskoFocus({ focusedPosko }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!focusedPosko) return;
+    try {
+      map.flyTo([focusedPosko.latitude, focusedPosko.longitude], 16, { duration: 1.2 });
+    } catch (_) {}
+  }, [focusedPosko, map]);
   return null;
 }
 
@@ -305,18 +304,15 @@ export default function FloodMap({
   bufferRadius = 250,
   onChangeBufferRiver,
   onChangeBufferRadius,
-  // bufferToolOpen removed
-  // onToggleBufferTool removed
+  bufferToolOpen = false,
+  onToggleBufferTool,
   // FITUR 6: FASILITAS KRITIS RADAR PROPS
   facilityCategory = "semua",
   onChangeFacilityCategory,
   publicMode = true,
+  focusedPosko = null,
 }) {
-  const [basemap, setBasemap] = useState("standar");
-  const [layerOpacity, setLayerOpacity] = useState(0.55);
-  const [basemapMenuOpen, setBasemapMenuOpen] = useState(false);
-  const [opacityMenuOpen, setOpacityMenuOpen] = useState(false);
-  const [facilityMenuOpen, setFacilityMenuOpen] = useState(false);
+  const [layerOpacity, setLayerOpacity] = useState(0.65);
   const [resetCount, setResetCount] = useState(0);
   const [userLocation, setUserLocation] = useState(null);
   const [locatingUser, setLocatingUser] = useState(false);
@@ -325,7 +321,7 @@ export default function FloodMap({
   // Layer toggles
   const [showPosko, setShowPosko] = useState(true);
   // Layer tambahan tidak ditampilkan saat awal agar peta risiko tetap bersih.
-  // showKanal state removed
+  const [showKanal, setShowKanal] = useState(false);
 
   const activeRiverFeature = useMemo(
     () => KANAL_DAN_SUNGAI_MAKASSAR.features.find(
@@ -478,10 +474,10 @@ export default function FloodMap({
             simTingkat === "sangat_tinggi"
               ? "Bahaya Ekstrem (Simulasi)"
               : simTingkat === "tinggi"
-                ? "Siaga Banjir (Simulasi)"
-                : simTingkat === "sedang"
-                  ? "Waspada (Simulasi)"
-                  : "Aman (Simulasi)",
+              ? "Siaga Banjir (Simulasi)"
+              : simTingkat === "sedang"
+              ? "Waspada (Simulasi)"
+              : "Aman (Simulasi)",
           elevasi: elev,
           hujan: simRain,
           estimasiKedalamanCm: simulatedDepth,
@@ -574,7 +570,7 @@ export default function FloodMap({
           try {
             layer.closeTooltip();
             layer.unbindTooltip();
-          } catch (_) { }
+          } catch (_) {}
           onSelectKelurahan({
             ...props,
             feature,
@@ -616,156 +612,8 @@ export default function FloodMap({
   );
 
   return (
-    <div id="peta" className="flood-map-wrapper">
-      {/* Kontrol ringkas: pencarian tersimpan untuk HP, filter diringkas jadi satu pilihan. */}
-      <div className="map-toolbar">
-        <div className="map-search-box">
-          <IconSearch size={16} color="#64748B" />
-          <input
-            type="text"
-            placeholder="Ketik nama kelurahan Makassar..."
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="map-search-input"
-            aria-label="Cari kelurahan pada peta"
-          />
-          {search && (
-            <button
-              type="button"
-              className="map-search-clear"
-              onClick={() => onSearchChange("")}
-              aria-label="Hapus filter nama"
-            >
-              <IconClose size={13} color="#64748B" />
-            </button>
-          )}
-        </div>
-
-        <div className="map-toolbar-context">
-          <span>Status wilayah</span>
-          <strong>Pilih area pada peta</strong>
-        </div>
-
-        <div className="map-filter-chips">
-          <label className="risk-filter-select">
-            <span className="sr-only">Filter status risiko</span>
-            <select value={filter} onChange={(event) => onFilterChange(event.target.value)} aria-label="Filter status risiko">
-              <option value="semua">Semua wilayah ({summary.total})</option>
-              <option value="rendah">Aman ({summary.rendah})</option>
-              <option value="sedang">Waspada ({summary.sedang})</option>
-              <option value="tinggi">Siaga ({summary.tinggi})</option>
-              <option value="sangat_tinggi">Bahaya ({summary.sangat_tinggi})</option>
-            </select>
-          </label>
-
-          {/* Toggle Layer Posko */}
-          <button
-            type="button"
-            className={`filter-chip ${showPosko ? "active-layer" : ""}`}
-            onClick={() => {
-              setShowPosko((p) => !p);
-              showToast(!showPosko ? "Layer posko evakuasi ditampilkan" : "Layer posko disembunyikan");
-            }}
-            title="Tampilkan / Sembunyikan Titik Posko Evakuasi Makassar"
-          >
-            Posko ({POSKO_EVAKUASI_MAKASSAR.length})
-          </button>
-
-          {/* Toggle Layer Kanal */}
-          <button
-            type="button"
-            className={`filter-chip ${showKanal ? "active-layer" : ""}`}
-            onClick={() => {
-              setShowKanal((p) => !p);
-              showToast(!showKanal ? "🌊 Layer Kanal & Sungai aktif" : "Layer Kanal disembunyikan");
-            }}
-            title="Tampilkan / Sembunyikan Jaringan Kanal & Sungai Utama"
-          >
-            🌊 Kanal & Sungai ({KANAL_DAN_SUNGAI_MAKASSAR.features.length})
-          </button>
-
-          {/* FITUR 4: TOOL BUFFER SEMPADAN KANAL */}
-// Buffer tool button removed
-
-          {/* FITUR 6 (REKOMENDASI USER): FASILITAS KRITIS RADAR */}
-          <div className="map-btn-dropdown-wrap" style={{ display: "inline-block" }}>
-            <button
-              type="button"
-              className={`filter-chip ${facilityCategory !== "none" ? "active-facility-btn" : ""}`}
-              onClick={() => setFacilityMenuOpen((p) => !p)}
-              title="Filter fasilitas kritis: Rumah Sakit, BPBD/Damkar, Tempat Ibadah Tinggi, SPBU"
-            >
-              <span>Fasilitas</span>
-              <span style={{ fontSize: "10px", marginLeft: "2px" }}>▼</span>
-            </button>
-
-            {facilityMenuOpen && (
-              <div className="map-dropdown-menu facility-dropdown">
-                <span className="dropdown-title">Kategori Fasilitas Kritis:</span>
-                {KATEGORI_FASILITAS.map((kat) => (
-                  <button
-                    key={kat.id}
-                    type="button"
-                    className={`dropdown-item ${facilityCategory === kat.id ? "active" : ""}`}
-                    onClick={() => {
-                      if (onChangeFacilityCategory) onChangeFacilityCategory(kat.id);
-                      setFacilityMenuOpen(false);
-                      showToast(`Filter Fasilitas: ${kat.label}`);
-                    }}
-                  >
-                    <span>{kat.icon} {kat.label}</span>
-                    {facilityCategory === kat.id && <span>✓</span>}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className={`dropdown-item ${facilityCategory === "none" ? "active" : ""}`}
-                  onClick={() => {
-                    if (onChangeFacilityCategory) onChangeFacilityCategory("none");
-                    setFacilityMenuOpen(false);
-                    showToast("Fasilitas kritis disembunyikan");
-                  }}
-                >
-                  <span>🚫 Sembunyikan Fasilitas</span>
-                  {facilityCategory === "none" && <span>✓</span>}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* FITUR 6 (SEBELUMNYA): TOGGLE KOMPARASI SATELIT */}
-          {!publicMode && <button
-            type="button"
-            className={`filter-chip chip-compare-toggle ${compareMode ? "active-compare" : ""}`}
-            onClick={() => {
-              setCompareMode((p) => {
-                const next = !p;
-                showToast(next ? "🔄 Mode Komparasi Satelit Aktif" : "Mode Komparasi Dinonaktifkan");
-                return next;
-              });
-            }}
-            title="Bandingkan citra satelit resolusi tinggi vs zona risiko banjir dengan slider pemisah"
-          >
-            <IconCompare size={13} color={compareMode ? "#FFFFFF" : "#0284C7"} />
-            <span>Komparasi Satelit</span>
-          </button>}
-
-          {/* MODE SIMULASI BUTTON DI TOOLBAR */}
-          {!publicMode && onOpenSimulation && (
-            <button
-              type="button"
-              className={`filter-chip chip-sim-toggle ${isSimulation ? "active-sim" : ""}`}
-              onClick={onOpenSimulation}
-              title="Buka Pengaturan Mode Simulasi Bencana (Kustom)"
-            >
-              <IconFlask size={13} color={isSimulation ? "#FFFFFF" : "#0284C7"} />
-              <span>{isSimulation ? "🧪 Simulasi Aktif" : "🧪 Mode Simulasi"}</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Kontainer Peta Leaflet */}
+    <div id="peta" className="flood-map-wrapper full-canvas-mode">
+      {/* Kontainer Peta Leaflet Full Canvas */}
       <div className={`leaflet-map-frame ${compareMode ? "in-compare-mode" : ""}`} ref={mapFrameRef}>
         {geojson ? (
           <MapContainer
@@ -778,38 +626,18 @@ export default function FloodMap({
             <MapCompareController compareMode={compareMode} comparePos={comparePos} />
             <MapResizeHandler />
 
-            {compareMode ? (
-              <>
-                <TileLayer
-                  key="compare-satelit-base"
-                  attribution={BASEMAPS.satelit.attribution}
-                  url={BASEMAPS.satelit.url}
-                  maxZoom={19}
-                />
-                <TileLayer
-                  key="compare-topo-right"
-                  pane="rightBasemapPane"
-                  attribution={BASEMAPS.standar.attribution}
-                  url={BASEMAPS.standar.url}
-                  maxZoom={19}
-                />
-              </>
-            ) : (
-              <>
-                <TileLayer
-                  key={basemap}
-                  attribution={BASEMAPS[basemap].attribution}
-                  url={BASEMAPS[basemap].url}
-                  maxZoom={19}
-                />
-                {BASEMAPS[basemap].overlayUrl && (
-                  <TileLayer
-                    key={`${basemap}-overlay`}
-                    url={BASEMAPS[basemap].overlayUrl}
-                    maxZoom={19}
-                  />
-                )}
-              </>
+            <TileLayer
+              key="esri-darkgray-base"
+              attribution={BASEMAPS.darkgray.attribution}
+              url={BASEMAPS.darkgray.url}
+              maxZoom={19}
+            />
+            {BASEMAPS.darkgray.overlayUrl && (
+              <TileLayer
+                key="esri-darkgray-reference"
+                url={BASEMAPS.darkgray.overlayUrl}
+                maxZoom={19}
+              />
             )}
 
             {filteredGeojson && (
@@ -823,6 +651,7 @@ export default function FloodMap({
 
             <SelectedFocus feature={selectedKelurahan?.feature} />
             <UserLocationFocus location={userLocation} />
+            <PoskoFocus focusedPosko={focusedPosko} />
             <MapResetFocus trigger={resetCount} />
 
             {/* FITUR 4: DYNAMIC BUFFER ZONE SEMPADAN KANAL */}
@@ -941,20 +770,20 @@ export default function FloodMap({
                         </span>
                         <span style={{ fontSize: "10px", color: "#64748B" }}>{posko.status}</span>
                       </div>
-                      <strong style={{ fontSize: "14px", color: "#172B3A", display: "block", marginBottom: "2px" }}>
+                      <strong style={{ fontSize: "14px", color: "#F8FAFC", display: "block", marginBottom: "2px" }}>
                         {posko.nama}
                       </strong>
-                      <span style={{ fontSize: "11px", color: "#64748B", display: "block", marginBottom: "6px" }}>
+                      <span style={{ fontSize: "11px", color: "#94A3B8", display: "block", marginBottom: "6px" }}>
                         📍 {posko.alamat} (Kec. {posko.kecamatan})
                       </span>
                       <div
                         style={{
                           fontSize: "11px",
-                          color: "#1E293B",
-                          background: "#F8FAFC",
+                          color: "#E2E8F0",
+                          background: "rgba(255, 255, 255, 0.06)",
                           padding: "6px 8px",
                           borderRadius: "6px",
-                          border: "1px solid #E2E8F0",
+                          border: "1px solid rgba(255, 255, 255, 0.12)",
                           marginBottom: "8px",
                         }}
                       >
@@ -1029,17 +858,18 @@ export default function FloodMap({
                       >
                         {f.kategoriLabel}
                       </span>
-                      <strong style={{ fontSize: "14px", color: "#172B3A", display: "block" }}>{f.nama}</strong>
-                      <span style={{ fontSize: "11px", color: "#64748B", display: "block", marginBottom: "6px" }}>
+                      <strong style={{ fontSize: "14px", color: "#F8FAFC", display: "block" }}>{f.nama}</strong>
+                      <span style={{ fontSize: "11px", color: "#94A3B8", display: "block", marginBottom: "6px" }}>
                         📍 {f.alamat} ({f.kecamatan})
                       </span>
                       <div
                         style={{
                           fontSize: "11px",
-                          background: "#F8FAFC",
+                          color: "#E2E8F0",
+                          background: "rgba(255, 255, 255, 0.06)",
                           padding: "6px 8px",
                           borderRadius: "6px",
-                          border: "1px solid #E2E8F0",
+                          border: "1px solid rgba(255, 255, 255, 0.12)",
                           marginBottom: "8px",
                         }}
                       >
@@ -1174,107 +1004,34 @@ export default function FloodMap({
           </div>
         )}
 
-        {/* Floating Quick Action Buttons di Kanan Atas Peta */}
-        <div className="map-floating-controls">
-          {/* Tombol Basemap Picker */}
-          <div className="map-btn-dropdown-wrap">
-            <button
-              type="button"
-              className={`map-circle-btn ${basemapMenuOpen ? "active" : ""}`}
-              onClick={() => {
-                setBasemapMenuOpen((p) => !p);
-                setOpacityMenuOpen(false);
-              }}
-              title="Pilihan Jenis Peta (Basemap)"
-              aria-label="Pilih jenis basemap"
-            >
-              <IconLayers size={18} color="#172B3A" />
-            </button>
-
-            {basemapMenuOpen && (
-              <div className="map-dropdown-menu">
-                <span className="dropdown-title">Pilih Basemap:</span>
-                {Object.entries(BASEMAPS).map(([key, bm]) => (
-                  <button
-                    key={`bm-${key}`}
-                    type="button"
-                    className={`dropdown-item ${basemap === key ? "active" : ""}`}
-                    onClick={() => {
-                      setBasemap(key);
-                      setBasemapMenuOpen(false);
-                      showToast(`Basemap diubah ke: ${bm.label}`);
-                    }}
-                  >
-                    <span>{bm.label}</span>
-                    {basemap === key && <span>✓</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Tombol Pengatur Transparansi Opacity */}
-          {!publicMode && <div className="map-btn-dropdown-wrap">
-            <button
-              type="button"
-              className={`map-circle-btn ${opacityMenuOpen ? "active" : ""}`}
-              onClick={() => {
-                setOpacityMenuOpen((p) => !p);
-                setBasemapMenuOpen(false);
-              }}
-              title="Atur Transparansi Zona Kelurahan"
-              aria-label="Atur transparansi layer"
-            >
-              <IconOpacity size={18} color="#172B3A" />
-            </button>
-
-            {opacityMenuOpen && (
-              <div className="map-dropdown-menu opacity-menu">
-                <div className="opacity-header">
-                  <span>Transparansi Zona:</span>
-                  <strong style={{ color: "#176B65" }}>{Math.round(layerOpacity * 100)}%</strong>
-                </div>
-                <input
-                  type="range"
-                  min="10"
-                  max="90"
-                  step="5"
-                  value={Math.round(layerOpacity * 100)}
-                  onChange={(e) => setLayerOpacity(Number(e.target.value) / 100)}
-                  className="opacity-slider"
-                />
-                <div className="opacity-presets">
-                  <button type="button" onClick={() => setLayerOpacity(0.25)}>Terang (25%)</button>
-                  <button type="button" onClick={() => setLayerOpacity(0.55)}>Sedang (55%)</button>
-                  <button type="button" onClick={() => setLayerOpacity(0.8)}>Pekat (80%)</button>
-                </div>
-              </div>
-            )}
-          </div>}
-
-          {/* Tombol Reset Kamera Peta ke Seluruh Kota Makassar */}
-          <button
-            type="button"
-            className="map-circle-btn"
-            onClick={() => {
-              setResetCount((c) => c + 1);
-              showToast("Kamera peta di-reset ke seluruh Kota Makassar");
-            }}
-            title="Reset Posisi Peta ke Makassar"
-            aria-label="Reset kamera peta ke Makassar"
-          >
-            <IconCompass size={18} color="#172B3A" />
-          </button>
-
+        {/* Floating Quick Action Buttons di Kanan Bawah Peta: Lokasi Saya & Reset Peta */}
+        <div className="map-bottom-right-dock">
           {/* Tombol Deteksi Lokasi GPS Pengguna */}
           <button
             type="button"
-            className={`map-circle-btn ${locatingUser ? "loading" : ""}`}
+            className={`map-dock-pill-btn ${locatingUser ? "loading" : ""}`}
             onClick={handleDetectLocation}
             title="Deteksi Lokasi GPS Saya"
-            aria-label="Deteksi posisi GPS saya"
           >
-            <IconLocation size={18} color="#172B3A" />
+            <span>{locatingUser ? "Mencari..." : "Lokasi saya"}</span>
+          </button>
+
+          {/* Tombol Reset Kamera / Rute */}
+          <button
+            type="button"
+            className="map-dock-pill-btn"
+            onClick={() => {
+              if (activeRoute && onClearRoute) {
+                onClearRoute();
+                showToast("Rute evakuasi di-reset");
+              } else {
+                setResetCount((c) => c + 1);
+                showToast("Kamera peta di-reset ke seluruh Kota Makassar");
+              }
+            }}
+            title="Reset Peta / Hapus Rute"
+          >
+            <span>{activeRoute ? "Reset rute" : "Reset peta"}</span>
           </button>
         </div>
 

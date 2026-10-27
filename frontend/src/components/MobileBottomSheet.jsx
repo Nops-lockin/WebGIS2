@@ -20,15 +20,30 @@ export default function MobileBottomSheet({
   badge,
 }) {
   const [activeTab, setActiveTab] = React.useState("ikhtisar"); // "ikhtisar" | "kedalaman" | "cuaca"
+  const [sheetState, setSheetState] = React.useState("peek"); // "peek" (ringkas) | "half" | "expanded" (penuh)
 
   if (!selected) return null;
 
   const effectiveDepth = Number(selected.estimasi_kedalaman_cm) || 0;
 
+  const cycleSheetState = () => {
+    if (sheetState === "peek") setSheetState("half");
+    else if (sheetState === "half") setSheetState("expanded");
+    else setSheetState("peek");
+  };
+
   return (
-    <div className="mobile-bottom-sheet" role="dialog" aria-label={`Detail Kelurahan ${selected.nama_kelurahan}`}>
-      {/* Handle Bar Drag Indikator */}
-      <div className="sheet-drag-handle" />
+    <div
+      className={`mobile-bottom-sheet sheet-state-${sheetState}`}
+      role="dialog"
+      aria-label={`Detail Kelurahan ${selected.nama_kelurahan}`}
+    >
+      {/* Handle Bar Drag Indikator (Tap to toggle peek/expanded) */}
+      <div
+        className="sheet-drag-handle"
+        onClick={cycleSheetState}
+        title="Ketuk untuk memperluas atau memperkecil panel"
+      />
 
       {/* Header Bottom Sheet */}
       <div className="sheet-header">
@@ -162,7 +177,7 @@ export default function MobileBottomSheet({
         {activeTab === "cuaca" && (
           <div className="sheet-tab-pane">
             <div className="sheet-bmkg-header">
-              <strong>Prakiraan Cuaca BMKG 3-Harian</strong>
+              <strong>Prakiraan Cuaca BMKG</strong>
               <span>Sumber: API Resmi BMKG</span>
             </div>
 

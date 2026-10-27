@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { IconShield, IconSearch, IconClose, IconMobile, IconLaptop, IconFlask } from "../Icons";
+import JeneBosiLogo from "./JeneBosiLogo";
+import { IconSearch, IconClose, IconMobile, IconLaptop, IconFlask, IconSun } from "../Icons";
 
 export default function AppHeader({
   search = "",
@@ -8,8 +9,11 @@ export default function AppHeader({
   onSelectKelurahan,
   viewMode = "laptop",
   onToggleMode,
-  onOpenWaterSimulator,
-  onOpenSimulation,
+  theme = "dark",
+  onToggleTheme,
+  filter = "semua",
+  onFilterChange,
+  summary = { total: 153, rendah: 0, sedang: 0, tinggi: 0, sangat_tinggi: 0 },
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -18,40 +22,32 @@ export default function AppHeader({
   const searchResults = search.trim().length >= 2
     ? daftarKelurahan.filter((k) =>
         k.nama_kelurahan.toLowerCase().includes(search.toLowerCase())
-      ).slice(0, 6)
+      ).slice(0, 8)
     : [];
 
-  const handleNavClick = (targetId) => {
-    setMobileMenuOpen(false);
-    const element = document.getElementById(targetId);
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth" });
-    }
-  };
-
   return (
-    <header className="app-header">
+    <header className="app-header glass-header">
       <div className="header-container">
         {/* Logo Brand & Wordmark */}
-        <div className="header-brand" onClick={() => handleNavClick("peta")}>
+        <div className="header-brand">
           <div className="brand-logo-badge">
-            <IconShield size={20} color="#FFFFFF" />
+            <JeneBosiLogo size={28} />
           </div>
           <div className="brand-text-block">
             <div className="brand-title">
               Jene<span>Bosi</span>
             </div>
-            <div className="brand-tagline">Kesiapsiagaan Banjir Makassar</div>
+            <div className="brand-tagline">WebGIS Banjir Makassar</div>
           </div>
         </div>
 
-        {/* Quick Search Kelurahan di Header */}
+        {/* Quick Search Kelurahan di Header (Pusat seperti Referensi) */}
         <div className="header-search-wrapper">
           <div className={`header-search-bar ${isSearchFocused ? "focused" : ""}`}>
-            <IconSearch size={16} color="#64748B" />
+            <IconSearch size={16} color="var(--text-secondary)" />
             <input
               type="text"
-              placeholder="Cari kelurahan Makassar..."
+              placeholder="Cari kelurahan di Kota Makassar..."
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
               onFocus={() => setIsSearchFocused(true)}
@@ -65,7 +61,7 @@ export default function AppHeader({
                 onClick={() => onSearchChange("")}
                 aria-label="Hapus pencarian"
               >
-                <IconClose size={14} color="#64748B" />
+                <IconClose size={14} color="var(--text-secondary)" />
               </button>
             )}
           </div>
@@ -80,7 +76,6 @@ export default function AppHeader({
                   onMouseDown={() => {
                     onSelectKelurahan(k);
                     onSearchChange(k.nama_kelurahan);
-                    handleNavClick("peta");
                   }}
                 >
                   <span className="search-item-name">{k.nama_kelurahan}</span>
@@ -91,87 +86,83 @@ export default function AppHeader({
           )}
         </div>
 
-        {/* Desktop Navigation Links */}
-        <nav className="header-nav-desktop" aria-label="Navigasi Utama">
-          <button type="button" onClick={() => handleNavClick("peta")} className="nav-link">
-            Peta Banjir
-          </button>
-          <button type="button" onClick={() => handleNavClick("panduan")} className="nav-link">
-            Panduan Siaga
-          </button>
-        </nav>
-
-        {onOpenSimulation && (
-          <button type="button" className="header-simulation-btn" onClick={onOpenSimulation} title="Buka simulasi skenario banjir">
-            <IconFlask size={15} color="#FFFFFF" />
-            <span>Simulasi</span>
-          </button>
-        )}
-
-
-        {/* Tombol Beralih Mode HP */}
-        {onToggleMode && (
-          <button
-            type="button"
-            className="header-mode-toggle-btn"
-            onClick={onToggleMode}
-            title={viewMode === "laptop" ? "Beralih ke Tampilan Handphone" : "Beralih ke Tampilan Laptop"}
-          >
-            {viewMode === "laptop" ? (
-              <>
-                <IconLaptop size={15} color="#176B65" />
-                <span>Tampilan: Laptop</span>
-              </>
-            ) : (
-              <>
-                <IconMobile size={15} color="#176B65" />
-                <span>Tampilan: HP</span>
-              </>
-            )}
-          </button>
-        )}
-
-        {/* Mobile Hamburger Toggle Button */}
-        <button
-          type="button"
-          className="header-mobile-toggle"
-          onClick={() => setMobileMenuOpen((p) => !p)}
-          aria-label={mobileMenuOpen ? "Tutup menu" : "Buka menu"}
-        >
-          {mobileMenuOpen ? <IconClose size={22} color="#172B3A" /> : (
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#172B3A" strokeWidth="2" strokeLinecap="round">
-              <line x1="3" y1="12" x2="21" y2="12" />
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <line x1="3" y1="18" x2="21" y2="18" />
-            </svg>
+        {/* Right Action: Theme Switcher & View Mode Toggle */}
+        <div className="header-right-controls">
+          {onToggleTheme && (
+            <button
+              type="button"
+              className="theme-toggle-switch"
+              onClick={onToggleTheme}
+              title={theme === "dark" ? "Ganti ke Mode Terang" : "Ganti ke Mode Gelap"}
+              aria-label="Ganti tema tampilan"
+            >
+              <span className={`theme-toggle-indicator ${theme}`}>
+                {theme === "dark" ? "🌙" : "☀️"}
+              </span>
+            </button>
           )}
-        </button>
+
+          {/* Tombol Beralih Mode HP */}
+          {onToggleMode && (
+            <button
+              type="button"
+              className="header-mode-toggle-btn"
+              onClick={onToggleMode}
+              title={viewMode === "laptop" ? "Beralih ke Tampilan Handphone" : "Beralih ke Tampilan Laptop"}
+            >
+              {viewMode === "laptop" ? (
+                <>
+                  <IconLaptop size={15} color="var(--brand-primary)" />
+                  <span>Laptop</span>
+                </>
+              ) : (
+                <>
+                  <IconMobile size={15} color="var(--brand-primary)" />
+                  <span>HP</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Mobile Drawer Menu */}
-      {mobileMenuOpen && (
-        <div className="header-mobile-drawer">
-          <button type="button" onClick={() => handleNavClick("peta")} className="mobile-nav-link">
-            Peta Banjir
+      {/* Horizontal Category Chips Bar tepat di bawah search seperti di gambar referensi */}
+      {onFilterChange && (
+        <div className="header-category-chips-bar">
+          <button
+            type="button"
+            className={`cat-pill ${filter === "semua" ? "active" : ""}`}
+            onClick={() => onFilterChange("semua")}
+          >
+            Semua ({summary.total})
           </button>
-          {onOpenWaterSimulator && (
-            <button type="button" onClick={() => { setMobileMenuOpen(false); onOpenWaterSimulator(); }} className="mobile-nav-link">
-              Simulator Ketinggian Air
-            </button>
-          )}
-          {onOpenSimulation && (
-            <button type="button" onClick={() => { setMobileMenuOpen(false); onOpenSimulation(); }} className="mobile-nav-link">
-              Simulasi Skenario Banjir
-            </button>
-          )}
-          <button type="button" onClick={() => handleNavClick("cuaca")} className="mobile-nav-link">
-            Prakiraan Cuaca BMKG
+          <button
+            type="button"
+            className={`cat-pill cat-aman ${filter === "rendah" ? "active" : ""}`}
+            onClick={() => onFilterChange("rendah")}
+          >
+            Aman ({summary.rendah})
           </button>
-          <button type="button" onClick={() => handleNavClick("panduan")} className="mobile-nav-link">
-            Panduan Kesiapsiagaan
+          <button
+            type="button"
+            className={`cat-pill cat-waspada ${filter === "sedang" ? "active" : ""}`}
+            onClick={() => onFilterChange("sedang")}
+          >
+            Waspada ({summary.sedang})
           </button>
-          <button type="button" onClick={() => handleNavClick("tentang")} className="mobile-nav-link">
-            Tentang Data & Metodologi
+          <button
+            type="button"
+            className={`cat-pill cat-siaga ${filter === "tinggi" ? "active" : ""}`}
+            onClick={() => onFilterChange("tinggi")}
+          >
+            Siaga ({summary.tinggi})
+          </button>
+          <button
+            type="button"
+            className={`cat-pill cat-bahaya ${filter === "sangat_tinggi" ? "active" : ""}`}
+            onClick={() => onFilterChange("sangat_tinggi")}
+          >
+            Bahaya Ekstrem ({summary.sangat_tinggi})
           </button>
         </div>
       )}

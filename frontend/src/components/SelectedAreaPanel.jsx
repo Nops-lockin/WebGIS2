@@ -13,9 +13,9 @@ export function getRiskBadge(tingkatStr) {
     return {
       key: "sangat_tinggi",
       label: "Bahaya Ekstrem",
-      color: "#C53030",
-      bg: "rgba(197, 48, 48, 0.12)",
-      border: "#C53030",
+      color: "#EF4444",
+      bg: "rgba(239, 68, 68, 0.15)",
+      border: "#EF4444",
       desc: "Wilayah berisiko banjir sangat tinggi. Memerlukan kewaspadaan ekstra dan kesiapan evakuasi.",
     };
   }
@@ -23,9 +23,9 @@ export function getRiskBadge(tingkatStr) {
     return {
       key: "tinggi",
       label: "Siaga Banjir",
-      color: "#DD6B20",
-      bg: "rgba(221, 107, 32, 0.12)",
-      border: "#DD6B20",
+      color: "#F97316",
+      bg: "rgba(249, 115, 22, 0.15)",
+      border: "#F97316",
       desc: "Potensi genangan signifikan pada titik dataran rendah dan bantaran drainase utama.",
     };
   }
@@ -33,9 +33,9 @@ export function getRiskBadge(tingkatStr) {
     return {
       key: "sedang",
       label: "Waspada",
-      color: "#D69E2E",
-      bg: "rgba(214, 158, 46, 0.12)",
-      border: "#D69E2E",
+      color: "#F59E0B",
+      bg: "rgba(245, 158, 11, 0.15)",
+      border: "#F59E0B",
       desc: "Berpotensi terjadi genangan sesaat ketika hujan deras dengan durasi lama.",
     };
   }
@@ -43,18 +43,18 @@ export function getRiskBadge(tingkatStr) {
     return {
       key: "rendah",
       label: "Aman Berdasarkan Data Tersedia",
-      color: "#2F855A",
-      bg: "rgba(47, 133, 90, 0.12)",
-      border: "#2F855A",
+      color: "#10B981",
+      bg: "rgba(16, 185, 129, 0.15)",
+      border: "#10B981",
       desc: "Risiko genangan rendah pada kondisi saat ini. Tetap pantau saluran drainase lingkungan.",
     };
   }
   return {
     key: "belum",
     label: "Data Belum Tersedia",
-    color: "#94A3B8",
-    bg: "rgba(148, 163, 184, 0.12)",
-    border: "#94A3B8",
+    color: "#64748B",
+    bg: "rgba(100, 116, 139, 0.15)",
+    border: "#64748B",
     desc: "Belum ada catatan risiko genangan terverifikasi untuk wilayah ini.",
   };
 }
@@ -199,7 +199,7 @@ export default function SelectedAreaPanel({
                 Kelurahan {selected.nama_kelurahan} &bull; Sumber: API Resmi BMKG
               </span>
             </div>
-            <span className="forecast-type-tag">Prakiraan 3 Harian</span>
+            <span className="forecast-type-tag">Prakiraan Cuaca</span>
           </div>
 
           {loadingPrakiraan ? (

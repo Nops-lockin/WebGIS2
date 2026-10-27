@@ -27,11 +27,6 @@ export default function FloodDepthEstimate({ depthCm, weatherCondition, updatedA
       <div className="depth-estimate-character" aria-label="Perbandingan tinggi air dengan karakter manusia">
         <FloodDepthVisualization depthCm={depth} showHeader={false} showImpactCards={false} />
       </div>
-
-      <p className="depth-estimate-note">
-        Dihitung di backend dari prakiraan BMKG dan parameter spasial. Ini adalah estimasi indikatif,
-        bukan pembacaan sensor atau kepastian banjir.
-      </p>
       {weatherCondition && <span className="depth-estimate-update">Kondisi cuaca: {weatherCondition}</span>}
       {updatedAt && <span className="depth-estimate-update">Terakhir diperbarui: {new Date(updatedAt).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}</span>}
     </section>

@@ -22,7 +22,7 @@ export default function RainfallInsight({
           </div>
           <h2 className="section-title">Prakiraan Cuaca & Potensi Hujan di Makassar</h2>
           <p className="section-subtitle">
-            Pantau proyeksi cuaca 3 harian untuk mengantisipasi potensi genangan sebelum hujan deras turun.
+            Pantau proyeksi cuaca untuk mengantisipasi potensi genangan sebelum hujan deras turun.
             {selectedKelurahan && ` Menampilkan proyeksi untuk wilayah: ${selectedKelurahan.nama_kelurahan}.`}
           </p>
         </div>
